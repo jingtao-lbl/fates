@@ -50,4 +50,7 @@ Thumbs.db
 # Old Files
 *~
 # Editor specific setting files
-*.vscode
+*.vscode.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+*/*/.ipynb_checkpoints/
+
