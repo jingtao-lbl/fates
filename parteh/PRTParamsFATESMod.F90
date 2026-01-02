@@ -1240,8 +1240,8 @@ contains
            !call endrun(msg=errMsg(sourcefile, __LINE__))
            
            !Jing Tao
-           write(fates_log(),*) ' Reassign seed_alloc:'
-           prt_params%seed_alloc(ipft)=0.999-prt_params%seed_alloc_mature(ipft)
+           write(fates_log(),*) ' Reassign seed_alloc_mature:'
+           prt_params%seed_alloc_mature(ipft)=0.99999-prt_params%seed_alloc(ipft)
            
         end if
 
