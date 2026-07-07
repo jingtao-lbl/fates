@@ -2489,6 +2489,23 @@ contains
       real(r8)                          :: sdlng2sap_par      ! running mean of PAR at the seedling layer [MJ/m2/day]
       real(r8)                          :: seedling_layer_smp ! soil matric potential at seedling rooting depth [mm H2O suction]
       integer, parameter                :: recruitstatus = 1  ! whether the newly created cohorts are recruited or initialized
+      !Jing Tao (2026-07-07, branch exp/cohort-n-ceiling): first-pass hard ceiling on the recruit
+      !   number density, added to stop the R5 prescribed-P mass-balance runaway that aborts at
+      !   EDMainMod.F90:1010 (failing element = P). Mechanism: with fates_cnp_prescribed_puptake=1
+      !   the plant receives P unconditionally (FatesSoilBGCFluxMod.F90:204), so the coupled
+      !   recruit-number path below (cohort_n = min(cohort_n, mass_avail/mass_demand)) has NO upper
+      !   bound -- the germinable seed pool (mass_avail) grows with no soil-P brake while Morris
+      !   perturbations shrink per-recruit mass_demand, so cohort_n diverges and num_plant reaches
+      !   ~1e6-1e9 /m2. The per-element TotalBalanceCheck then trips on accumulated round-off
+      !   (error_frac > 1e-5) and calls endrun. Capping the per-step recruit density keeps num_plant
+      !   bounded and removes the singularity regardless of parameter draw.
+      !   Units: recruits per m2 per recruitment step. Value 100.0 is a CONSERVATIVE first pass:
+      !   realistic Arctic recruitment is << 1 /m2/step and the runaway reaches 1e6+, so 100 sits
+      !   far above normal establishment yet far below the precision-trip regime and will not bite
+      !   under non-runaway conditions. TODO: promote to a runtime-tunable EDParamsMod namelist
+      !   parameter (default huge = off) once verified; V0-at-equality was intentionally SKIPPED for
+      !   this first crash-recurrence test.
+      real(r8), parameter               :: max_recruit_density = 100.0_r8 !Jing Tao: recruit-number ceiling [n/m2/step]; see note above
       integer                           :: ilayer_seedling_root ! the soil layer at seedling rooting depth
 
       !---------------------------------------------------------------------------
@@ -2638,6 +2655,16 @@ contains
                   cohort_n = min(cohort_n, mass_avail/mass_demand)
 
                end do do_elem
+
+               !Jing Tao (2026-07-07): apply the recruit-number ceiling (A2MC task #16) to the
+               !   final binding cohort_n. Without this, the coupled recruitment path above is
+               !   unbounded and diverges under prescribed-P, causing the num_plant runaway and the
+               !   EDMainMod.F90:1010 P mass-balance abort (see the max_recruit_density note in the
+               !   declarations). cohort_n here is a per-patch, per-step recruit COUNT, so the cap
+               !   is max_recruit_density [n/m2] * patch area [m2]. min() is monotone -- this only
+               !   ever reduces cohort_n, never increases it, so it is a no-op except when the
+               !   recruit number would otherwise exceed the ceiling.
+               cohort_n = min(cohort_n, max_recruit_density * currentPatch%area)
 
             else
                ! prescribed recruitment rates. number per sq. meter per year
