@@ -157,7 +157,9 @@ contains
           endif
        else
           if(btran_ft(cohort_in%pft) <= hf_sm_threshold)then 
-             hmort = EDPftvarcon_inst%mort_scalar_hydrfailure(cohort_in%pft)
+             !hmort = EDPftvarcon_inst%mort_scalar_hydrfailure(cohort_in%pft)
+             !following Commit e4be61e "alter hydraulic failure mortality logic"
+             hmort = EDPftvarcon_inst%mort_scalar_hydrfailure(cohort_in%pft)*((hf_sm_threshold- btran_ft(cohort_in%pft))/hf_sm_threshold)
           else
              hmort = 0.0_r8
           endif
