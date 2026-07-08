@@ -2503,7 +2503,8 @@ contains
       !   population cannot overshoot -- THE key difference from the failed cap. max_canopy_layers lets
       !   crown area exceed patch area (canopy + understory layering); 2.0 is a first pass. V0-at-equality
       !   SKIPPED for this test; TODO promote max_canopy_layers to an EDParamsMod param once verified.
-      real(r8), parameter               :: max_canopy_layers = 2.0_r8 !Jing Tao: crown-area headroom factor [n canopy layers]
+      real(r8), parameter               :: max_canopy_layers = 2.0_r8 !Jing Tao: crown-area headroom factor [n canopy layers] (Option B, retired)
+      real(r8), parameter               :: max_plant_density = 20.0_r8 !Jing Tao (Option C): max STANDING plant density [n/m2]; count-based headroom, see note at the cap
       real(r8)                          :: ca_recruit         !Jing Tao: crown area of one recruit of this PFT [m2]
       real(r8)                          :: existing_ca        !Jing Tao: total existing crown area already in the patch [m2]
       real(r8)                          :: headroom_ca        !Jing Tao: remaining canopy crown-area space for recruits [m2]
@@ -2690,9 +2691,19 @@ contains
                headroom_ca = max(0.0_r8, max_canopy_layers * currentPatch%area - existing_ca)
                dbh_tmp = dbh
                call carea_allom(dbh_tmp, 1.0_r8, currentSite%spread, ft, crowndamage, ca_recruit)
-               if (ca_recruit > 0.0_r8) then
-                  cohort_n = min(cohort_n, headroom_ca / ca_recruit)
-               end if
+               !Jing Tao (2026-07-07): OPTION C -- COUNT-based standing-density headroom. Replaces the
+               !   crown-area headroom above (Option B), which JTDIAG showed engaged 0/443 runaway events
+               !   because a recruit's crown area is microscopic (~4e-8 m2), so the crown headroom never
+               !   closed. Cap recruits so the STANDING patch num_plant cannot exceed
+               !   max_plant_density * patch area. existing_n (summed above) is the TRUE standing count --
+               !   unaffected by cohort fusion (fusion merges, conserving n) -- so once the patch reaches
+               !   the density cap, headroom -> 0 and recruitment halts, bounding num_plant at the
+               !   recruitment gate. Mass-conserving: un-created recruits stay in the seed_germ pool.
+               !   max_plant_density = 20 /m2 is a conservative first value (the runaway reaches
+               !   ~1e4-1e5 /m2; 20/m2 keeps num_plant << the precision-trip threshold for any patch size)
+               !   to confirm the mechanism bounds the crash; tune toward the measured healthy envelope
+               !   afterward. V0-at-equality SKIPPED for this test.
+               cohort_n = min(cohort_n, max(0.0_r8, max_plant_density * currentPatch%area - existing_n))
 
                !JTDIAG (2026-07-07, instrumentation): dump the recruit + patch state when recruitment
                !   is large, to diagnose the runaway -- which element binds cohort_n, whether the
