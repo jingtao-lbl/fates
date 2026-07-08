@@ -2489,23 +2489,26 @@ contains
       real(r8)                          :: sdlng2sap_par      ! running mean of PAR at the seedling layer [MJ/m2/day]
       real(r8)                          :: seedling_layer_smp ! soil matric potential at seedling rooting depth [mm H2O suction]
       integer, parameter                :: recruitstatus = 1  ! whether the newly created cohorts are recruited or initialized
-      !Jing Tao (2026-07-07, branch exp/cohort-n-ceiling): first-pass hard ceiling on the recruit
-      !   number density, added to stop the R5 prescribed-P mass-balance runaway that aborts at
-      !   EDMainMod.F90:1010 (failing element = P). Mechanism: with fates_cnp_prescribed_puptake=1
-      !   the plant receives P unconditionally (FatesSoilBGCFluxMod.F90:204), so the coupled
-      !   recruit-number path below (cohort_n = min(cohort_n, mass_avail/mass_demand)) has NO upper
-      !   bound -- the germinable seed pool (mass_avail) grows with no soil-P brake while Morris
-      !   perturbations shrink per-recruit mass_demand, so cohort_n diverges and num_plant reaches
-      !   ~1e6-1e9 /m2. The per-element TotalBalanceCheck then trips on accumulated round-off
-      !   (error_frac > 1e-5) and calls endrun. Capping the per-step recruit density keeps num_plant
-      !   bounded and removes the singularity regardless of parameter draw.
-      !   Units: recruits per m2 per recruitment step. Value 100.0 is a CONSERVATIVE first pass:
-      !   realistic Arctic recruitment is << 1 /m2/step and the runaway reaches 1e6+, so 100 sits
-      !   far above normal establishment yet far below the precision-trip regime and will not bite
-      !   under non-runaway conditions. TODO: promote to a runtime-tunable EDParamsMod namelist
-      !   parameter (default huge = off) once verified; V0-at-equality was intentionally SKIPPED for
-      !   this first crash-recurrence test.
-      real(r8), parameter               :: max_recruit_density = 100.0_r8 !Jing Tao: recruit-number ceiling [n/m2/step]; see note above
+      !Jing Tao (2026-07-07, branch exp/cohort-n-ceiling): OPTION B -- canopy-closure "headroom" ceiling
+      !   on the recruit number. Replaces the failed first-pass per-event cap (max_recruit_density=100/m2,
+      !   which still let num_plant reach 5.2e8 -- a per-event rate cap ignores the accumulated standing
+      !   population, so recruits kept summing; see model_logs/20260707a,b). Root cause: under R5's
+      !   prescribed-P regime the recruit min(C,N,P) has NO binding brake in the accelerated, open-canopy,
+      !   carbon-only ADSP window -- N is off (carbon-only allocation), C is un-scarce (canopy not closed),
+      !   and the P-limb is disabled because prescribed_puptake=1 makes plant->seed P unlimited (and low
+      !   phos_stoich Morris draws also shrink the per-recruit P demand). So recruit number diverges.
+      !   This restores a nutrient-regime-INDEPENDENT density brake: recruits may only fill the crown-area
+      !   HEADROOM remaining in the patch canopy. Because it subtracts the EXISTING standing crown area
+      !   (not a fixed per-event value), once the canopy is full recruitment halts and the standing
+      !   population cannot overshoot -- THE key difference from the failed cap. max_canopy_layers lets
+      !   crown area exceed patch area (canopy + understory layering); 2.0 is a first pass. V0-at-equality
+      !   SKIPPED for this test; TODO promote max_canopy_layers to an EDParamsMod param once verified.
+      real(r8), parameter               :: max_canopy_layers = 2.0_r8 !Jing Tao: crown-area headroom factor [n canopy layers]
+      real(r8)                          :: ca_recruit         !Jing Tao: crown area of one recruit of this PFT [m2]
+      real(r8)                          :: existing_ca        !Jing Tao: total existing crown area already in the patch [m2]
+      real(r8)                          :: headroom_ca        !Jing Tao: remaining canopy crown-area space for recruits [m2]
+      real(r8)                          :: dbh_tmp            !Jing Tao: dbh copy (carea_allom takes dbh intent(inout))
+      type(fates_cohort_type), pointer  :: iter_cohort        !Jing Tao: iterator to sum existing patch crown area
       integer                           :: ilayer_seedling_root ! the soil layer at seedling rooting depth
 
       !---------------------------------------------------------------------------
@@ -2656,15 +2659,26 @@ contains
 
                end do do_elem
 
-               !Jing Tao (2026-07-07): apply the recruit-number ceiling (A2MC task #16) to the
-               !   final binding cohort_n. Without this, the coupled recruitment path above is
-               !   unbounded and diverges under prescribed-P, causing the num_plant runaway and the
-               !   EDMainMod.F90:1010 P mass-balance abort (see the max_recruit_density note in the
-               !   declarations). cohort_n here is a per-patch, per-step recruit COUNT, so the cap
-               !   is max_recruit_density [n/m2] * patch area [m2]. min() is monotone -- this only
-               !   ever reduces cohort_n, never increases it, so it is a no-op except when the
-               !   recruit number would otherwise exceed the ceiling.
-               cohort_n = min(cohort_n, max_recruit_density * currentPatch%area)
+               !Jing Tao (2026-07-07): OPTION B -- crown-area HEADROOM ceiling on the recruit number
+               !   (A2MC task #16). Sum the crown area already occupying this patch, then allow recruits
+               !   to fill only the REMAINING canopy space (up to max_canopy_layers of crown area). This
+               !   caps the STANDING population, not the per-event increment: subtracting existing_ca is
+               !   what makes it self-limiting (recruitment halts once the canopy is full), unlike the
+               !   failed per-event cap that ignored existing plants and let them accumulate. cohort_n is
+               !   a per-patch recruit COUNT; headroom_ca / (crown area of one recruit) is the count that
+               !   physically fits. See the declaration note + model_logs/20260707b.
+               existing_ca = 0.0_r8
+               iter_cohort => currentPatch%tallest
+               do while (associated(iter_cohort))
+                  existing_ca = existing_ca + iter_cohort%c_area
+                  iter_cohort => iter_cohort%shorter
+               end do
+               headroom_ca = max(0.0_r8, max_canopy_layers * currentPatch%area - existing_ca)
+               dbh_tmp = dbh
+               call carea_allom(dbh_tmp, 1.0_r8, currentSite%spread, ft, crowndamage, ca_recruit)
+               if (ca_recruit > 0.0_r8) then
+                  cohort_n = min(cohort_n, headroom_ca / ca_recruit)
+               end if
 
             else
                ! prescribed recruitment rates. number per sq. meter per year
