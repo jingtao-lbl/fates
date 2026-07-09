@@ -218,7 +218,10 @@ contains
                 pft = ccohort%pft
                 fnrt_c = ccohort%prt%GetState(fnrt_organ, carbon12_element)
                 ccohort%daily_p_demand = fnrt_c * EDPftvarcon_inst%vmax_p(pft) * sec_per_day
-                ccohort%daily_p_gain   = fnrt_c * EDPftvarcon_inst%vmax_p(pft) * sec_per_day * EDPftvarcon_inst%prescribed_nuptake(pft)
+                !ccohort%daily_p_gain   = fnrt_c * EDPftvarcon_inst%vmax_p(pft) * sec_per_day * EDPftvarcon_inst%prescribed_nuptake(pft)
+                !!Jing Tao (2026-07-09): typo fix — prescribed-P uptake must use prescribed_puptake, not
+                ! prescribed_nuptake (the N fraction). Ported from the api-31 demo tree. Not in upstream e027a40.
+                ccohort%daily_p_gain   = fnrt_c * EDPftvarcon_inst%vmax_p(pft) * sec_per_day * EDPftvarcon_inst%prescribed_puptake(pft)
                 ccohort => ccohort%shorter
              end do
              cpatch => cpatch%younger
