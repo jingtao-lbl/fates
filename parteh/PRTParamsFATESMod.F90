@@ -731,12 +731,7 @@ contains
            write(fates_log(),*) '---~---'
            write(fates_log(),*) ''
            write(fates_log(),*) ''
-           ! !Jing Tao (2026-07-09, ported from api-31 demo): instead of flagging a fatal param error,
-           ! reassign seed_alloc_mature so the sum stays < 1 and the run proceeds (the demo commented out
-           ! the inline abort; api-43 defers via nerror, so here we skip the nerror bump and reassign).
-           write(fates_log(),*) ' Reassign seed_alloc_mature:'
-           prt_params%seed_alloc_mature(ipft) = 0.99999_r8 - prt_params%seed_alloc(ipft)
-           !nerror = nerror + 1
+           nerror = nerror + 1
         end if
 
         ! Check if woody plants have a structural biomass (agb) intercept
