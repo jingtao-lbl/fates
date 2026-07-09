@@ -56,6 +56,7 @@ module EDParamsMod
    real(r8),protected, public :: ED_val_vai_width_increase_factor     ! factor by which each leaf+stem scattering element increases in VAI width
    real(r8),protected, public :: ED_val_nignitions                    ! number of annual ignitions per square km
    real(r8),protected, public :: ED_val_understorey_death             ! fraction of plants in understorey cohort impacted by overstorey tree-fall
+   real(r8),protected, public :: ED_val_max_plant_density             ! Jing Tao (Option C): max STANDING plant density [n/m2] for the count-based recruit headroom that bounds the prescribed-P mass-balance runaway; a very large value (e.g. 1e30) turns it OFF (default), reproducing the baseline
    real(r8),protected, public :: ED_val_cwd_fcel                      ! Cellulose fraction for CWD
    real(r8),protected, public :: ED_val_cwd_flig                      ! Lignin fraction of coarse woody debris
    real(r8),protected, public :: maintresp_nonleaf_baserate           ! Base maintenance respiration rate for plant tissues
@@ -168,6 +169,7 @@ integer, parameter, public :: maxpft = 16      ! maximum number of PFTs allowed
    character(len=param_string_length),parameter,public :: ED_name_vai_width_increase_factor = "fates_vai_width_increase_factor"
    character(len=param_string_length),parameter,public :: ED_name_nignitions = "fates_fire_nignitions"
    character(len=param_string_length),parameter,public :: ED_name_understorey_death = "fates_mort_understorey_death"
+   character(len=param_string_length),parameter,public :: ED_name_max_plant_density = "fates_max_plant_density"
    character(len=param_string_length),parameter,public :: ED_name_cwd_fcel= "fates_frag_cwd_fcel"   
    character(len=param_string_length),parameter,public :: ED_name_cwd_flig= "fates_frag_cwd_flig"   
    character(len=param_string_length),parameter,public :: fates_name_maintresp_nonleaf_baserate= "fates_maintresp_nonleaf_baserate"
@@ -342,6 +344,7 @@ contains
     ED_val_vai_width_increase_factor      = nan
     ED_val_nignitions                     = nan
     ED_val_understorey_death              = nan
+    ED_val_max_plant_density              = nan
     ED_val_cwd_fcel                       = nan
     ED_val_cwd_flig                       = nan
     maintresp_nonleaf_baserate            = nan
@@ -463,6 +466,9 @@ contains
          dimension_names=dim_names_scalar)
 
     call fates_params%RegisterParameter(name=ED_name_understorey_death, dimension_shape=dimension_shape_scalar, &
+         dimension_names=dim_names_scalar)
+
+    call fates_params%RegisterParameter(name=ED_name_max_plant_density, dimension_shape=dimension_shape_scalar, &
          dimension_names=dim_names_scalar)
 
     call fates_params%RegisterParameter(name=ED_name_cwd_fcel, dimension_shape=dimension_shape_scalar, &
@@ -680,6 +686,9 @@ contains
     call fates_params%RetrieveParameter(name=ED_name_understorey_death, &
          data=ED_val_understorey_death)
 
+    call fates_params%RetrieveParameter(name=ED_name_max_plant_density, &
+         data=ED_val_max_plant_density)
+
     call fates_params%RetrieveParameter(name=ED_name_cwd_fcel, &
          data=ED_val_cwd_fcel)
 
@@ -883,6 +892,7 @@ contains
         write(fates_log(),fmt0) 'ED_val_vai_width_increase_factor = ',ED_val_vai_width_increase_factor
         write(fates_log(),fmt0) 'ED_val_nignitions = ',ED_val_nignitions
         write(fates_log(),fmt0) 'ED_val_understorey_death = ',ED_val_understorey_death
+        write(fates_log(),fmt0) 'ED_val_max_plant_density = ',ED_val_max_plant_density
         write(fates_log(),fmt0) 'ED_val_cwd_fcel = ',ED_val_cwd_fcel
         write(fates_log(),fmt0) 'ED_val_cwd_flig = ',ED_val_cwd_flig
         write(fates_log(),fmt0) 'fates_maintresp_nonleaf_baserate = ', maintresp_nonleaf_baserate

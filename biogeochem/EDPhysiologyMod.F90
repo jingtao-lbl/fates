@@ -97,6 +97,7 @@ module EDPhysiologyMod
   use EDParamsMod           , only : logging_export_frac
   use EDParamsMod           , only : regeneration_model
   use EDParamsMod           , only : sdlng_mort_par_timescale
+  use EDParamsMod           , only : ED_val_max_plant_density  ! Jing Tao (Option C): count-based recruit density cap; default OFF
   use FatesPlantHydraulicsMod  , only : AccumulateMortalityWaterStorage
   use FatesConstantsMod     , only : itrue,ifalse
   use FatesConstantsMod     , only : area_error_3
@@ -2489,32 +2490,19 @@ contains
       real(r8)                          :: sdlng2sap_par      ! running mean of PAR at the seedling layer [MJ/m2/day]
       real(r8)                          :: seedling_layer_smp ! soil matric potential at seedling rooting depth [mm H2O suction]
       integer, parameter                :: recruitstatus = 1  ! whether the newly created cohorts are recruited or initialized
-      !Jing Tao (2026-07-07, branch exp/cohort-n-ceiling): OPTION B -- canopy-closure "headroom" ceiling
-      !   on the recruit number. Replaces the failed first-pass per-event cap (max_recruit_density=100/m2,
-      !   which still let num_plant reach 5.2e8 -- a per-event rate cap ignores the accumulated standing
-      !   population, so recruits kept summing; see model_logs/20260707a,b). Root cause: under R5's
-      !   prescribed-P regime the recruit min(C,N,P) has NO binding brake in the accelerated, open-canopy,
-      !   carbon-only ADSP window -- N is off (carbon-only allocation), C is un-scarce (canopy not closed),
-      !   and the P-limb is disabled because prescribed_puptake=1 makes plant->seed P unlimited (and low
-      !   phos_stoich Morris draws also shrink the per-recruit P demand). So recruit number diverges.
-      !   This restores a nutrient-regime-INDEPENDENT density brake: recruits may only fill the crown-area
-      !   HEADROOM remaining in the patch canopy. Because it subtracts the EXISTING standing crown area
-      !   (not a fixed per-event value), once the canopy is full recruitment halts and the standing
-      !   population cannot overshoot -- THE key difference from the failed cap. max_canopy_layers lets
-      !   crown area exceed patch area (canopy + understory layering); 2.0 is a first pass. V0-at-equality
-      !   SKIPPED for this test; TODO promote max_canopy_layers to an EDParamsMod param once verified.
-      real(r8), parameter               :: max_canopy_layers = 2.0_r8 !Jing Tao: crown-area headroom factor [n canopy layers] (Option B, retired)
-      real(r8), parameter               :: max_plant_density = 20.0_r8 !Jing Tao (Option C): max STANDING plant density [n/m2]; count-based headroom, see note at the cap
-      real(r8)                          :: ca_recruit         !Jing Tao: crown area of one recruit of this PFT [m2]
-      real(r8)                          :: existing_ca        !Jing Tao: total existing crown area already in the patch [m2]
-      real(r8)                          :: headroom_ca        !Jing Tao: remaining canopy crown-area space for recruits [m2]
-      real(r8)                          :: dbh_tmp            !Jing Tao: dbh copy (carea_allom takes dbh intent(inout))
-      type(fates_cohort_type), pointer  :: iter_cohort        !Jing Tao: iterator to sum existing patch crown area
-      real(r8)                          :: this_n             !JTDIAG per-element limited recruit number
-      real(r8)                          :: cohort_n_raw       !JTDIAG raw min(C,N,P) before the headroom cap
-      real(r8)                          :: existing_n         !JTDIAG existing patch num_plant (sum of cohort%n)
-      real(r8)                          :: limn_c, limn_n, limn_p !JTDIAG per-element (C/N/P) limited recruit number
-      integer                           :: bind_el            !JTDIAG element_id that binds cohort_n
+      !Jing Tao (2026-07-08, branch exp/cohort-n-ceiling): OPTION C -- count-based standing-density
+      !   headroom on the recruit number, to bound the R5 prescribed-P mass-balance runaway
+      !   (EDMainMod.F90:1010, element = P). Under prescribed_puptake=1 the recruit min(C,N,P) has no
+      !   binding brake -- a seed-pool explosion (JTDIAG: all three C/N/P limbs track, P binds by a hair) --
+      !   cohort fusion sums n uncapped, the runaway plants are microscopic so crown-area self-thinning
+      !   never engages, and FATES has no density mortality (dropped from ED1.0/2.0 "for tractability").
+      !   This caps recruits so the STANDING patch num_plant cannot exceed ED_val_max_plant_density * patch
+      !   area, using existing_n (the true standing count, unaffected by fusion) -- so recruitment halts
+      !   once the patch is full, bounding num_plant at the recruitment gate. Mass-conserving: un-created
+      !   recruits stay in the seed_germ pool. Gated by the EDParamsMod parameter fates_max_plant_density
+      !   (default very large = OFF, reproduces the baseline bit-for-bit). See model_logs/20260707a-c.
+      type(fates_cohort_type), pointer  :: iter_cohort        !Jing Tao: iterator to sum existing patch num_plant
+      real(r8)                          :: existing_n         !Jing Tao: existing patch standing num_plant [n] (sum of cohort%n)
       integer                           :: ilayer_seedling_root ! the soil layer at seedling rooting depth
 
       !---------------------------------------------------------------------------
@@ -2593,7 +2581,6 @@ contains
                (EDPftvarcon_inst%prescribed_recruitment(ft) .lt. 0._r8)) then
 
                cohort_n = 1.e20_r8
-               bind_el = 0 ; limn_c = -1._r8 ; limn_n = -1._r8 ; limn_p = -1._r8   !JTDIAG
 
                do_elem: do el = 1, num_elements
                   element_id = element_list(el)
@@ -2662,59 +2649,24 @@ contains
                   end if ! End use TRS with seedling dynamics
 
                   ! update number density if this is the limiting mass
-                  this_n = mass_avail/mass_demand                                   !JTDIAG
-                  if (element_id == carbon12_element)   limn_c = this_n             !JTDIAG
-                  if (element_id == nitrogen_element)   limn_n = this_n             !JTDIAG
-                  if (element_id == phosphorus_element) limn_p = this_n             !JTDIAG
-                  if (this_n < cohort_n) bind_el = element_id                       !JTDIAG track binding element
-                  cohort_n = min(cohort_n, this_n)
+                  cohort_n = min(cohort_n, mass_avail/mass_demand)
 
                end do do_elem
 
-               !Jing Tao (2026-07-07): OPTION B -- crown-area HEADROOM ceiling on the recruit number
-               !   (A2MC task #16). Sum the crown area already occupying this patch, then allow recruits
-               !   to fill only the REMAINING canopy space (up to max_canopy_layers of crown area). This
-               !   caps the STANDING population, not the per-event increment: subtracting existing_ca is
-               !   what makes it self-limiting (recruitment halts once the canopy is full), unlike the
-               !   failed per-event cap that ignored existing plants and let them accumulate. cohort_n is
-               !   a per-patch recruit COUNT; headroom_ca / (crown area of one recruit) is the count that
-               !   physically fits. See the declaration note + model_logs/20260707b.
-               cohort_n_raw = cohort_n   !JTDIAG raw min(C,N,P) before the headroom cap
-               existing_ca = 0.0_r8
-               existing_n  = 0.0_r8      !JTDIAG
+               ! Jing Tao (Option C): count-based standing-density headroom. Cap recruits so the total
+               ! STANDING num_plant of this patch cannot exceed ED_val_max_plant_density * patch area.
+               ! existing_n is the true standing count (summed over the patch cohorts; unaffected by
+               ! cohort fusion, which conserves n), so once the patch fills to the density cap the
+               ! headroom -> 0 and recruitment halts -- bounding num_plant at the recruitment gate,
+               ! mass-conserving (un-created recruits remain in the seed_germ pool). Gated by
+               ! fates_max_plant_density (default very large = OFF -> no-op, reproduces baseline).
+               existing_n = 0.0_r8
                iter_cohort => currentPatch%tallest
                do while (associated(iter_cohort))
-                  existing_ca = existing_ca + iter_cohort%c_area
-                  existing_n  = existing_n + iter_cohort%n     !JTDIAG
+                  existing_n = existing_n + iter_cohort%n
                   iter_cohort => iter_cohort%shorter
                end do
-               headroom_ca = max(0.0_r8, max_canopy_layers * currentPatch%area - existing_ca)
-               dbh_tmp = dbh
-               call carea_allom(dbh_tmp, 1.0_r8, currentSite%spread, ft, crowndamage, ca_recruit)
-               !Jing Tao (2026-07-07): OPTION C -- COUNT-based standing-density headroom. Replaces the
-               !   crown-area headroom above (Option B), which JTDIAG showed engaged 0/443 runaway events
-               !   because a recruit's crown area is microscopic (~4e-8 m2), so the crown headroom never
-               !   closed. Cap recruits so the STANDING patch num_plant cannot exceed
-               !   max_plant_density * patch area. existing_n (summed above) is the TRUE standing count --
-               !   unaffected by cohort fusion (fusion merges, conserving n) -- so once the patch reaches
-               !   the density cap, headroom -> 0 and recruitment halts, bounding num_plant at the
-               !   recruitment gate. Mass-conserving: un-created recruits stay in the seed_germ pool.
-               !   max_plant_density = 20 /m2 is a conservative first value (the runaway reaches
-               !   ~1e4-1e5 /m2; 20/m2 keeps num_plant << the precision-trip threshold for any patch size)
-               !   to confirm the mechanism bounds the crash; tune toward the measured healthy envelope
-               !   afterward. V0-at-equality SKIPPED for this test.
-               cohort_n = min(cohort_n, max(0.0_r8, max_plant_density * currentPatch%area - existing_n))
-
-               !JTDIAG (2026-07-07, instrumentation): dump the recruit + patch state when recruitment
-               !   is large, to diagnose the runaway -- which element binds cohort_n, whether the
-               !   headroom actually engages (exist_ca vs ca_recr vs headr), and the num_plant
-               !   trajectory over time (exist_n each recruitment step -> continuous vs sudden jump).
-               if (cohort_n_raw > 1.0e3_r8 .or. existing_n > 1.0e3_r8) then
-                  write(fates_log(),*) 'JTDIAG ft=',ft,' n_raw=',cohort_n_raw,' bind_el=',bind_el, &
-                       ' limn_c=',limn_c,' limn_n=',limn_n,' limn_p=',limn_p,                     &
-                       ' exist_ca=',existing_ca,' ca_recr=',ca_recruit,' headr_ca=',headroom_ca,  &
-                       ' n_capped=',cohort_n,' exist_n=',existing_n
-               end if
+               cohort_n = min(cohort_n, max(0.0_r8, ED_val_max_plant_density * currentPatch%area - existing_n))
 
             else
                ! prescribed recruitment rates. number per sq. meter per year
