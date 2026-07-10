@@ -2485,12 +2485,12 @@ end subroutine flush_hvars
                hio_mortality_understory_si_scag     => this%hvars(ih_mortality_understory_si_scag)%r82d )
 
     ! Split up the associate statement as the nag compiler has a limit on line continuation  
-    associate( hio_gdd_si                           => this%hvars(ih_gdd_si)%r81d, &
+    associate( hio_gdd_si_pft                       => this%hvars(ih_gdd_si)%r82d, &   !Jing Tao (#17): per-PFT
                hio_site_ncolddays_si                => this%hvars(ih_site_ncolddays_si)%r81d, &
                hio_site_nchilldays_si               => this%hvars(ih_site_nchilldays_si)%r81d, &
-               hio_site_cstatus_si                  => this%hvars(ih_site_cstatus_si)%r81d, &
-               hio_cleafoff_si                      => this%hvars(ih_cleafoff_si)%r81d, &
-               hio_cleafon_si                       => this%hvars(ih_cleafon_si)%r81d, &
+               hio_site_cstatus_si_pft              => this%hvars(ih_site_cstatus_si)%r82d, &   !Jing Tao (#17): per-PFT
+               hio_cleafoff_si_pft                  => this%hvars(ih_cleafoff_si)%r82d, &   !Jing Tao (#17): per-PFT
+               hio_cleafon_si_pft                   => this%hvars(ih_cleafon_si)%r82d, &   !Jing Tao (#17): per-PFT
                hio_site_dstatus_si_pft              => this%hvars(ih_site_dstatus_si_pft)%r82d, &
                hio_dleafoff_si_pft                  => this%hvars(ih_dleafoff_si_pft)%r82d, &
                hio_dleafon_si_pft                   => this%hvars(ih_dleafon_si_pft)%r82d, &
@@ -2575,25 +2575,23 @@ end subroutine flush_hvars
       ! Canopy spread index (0-1)
       hio_canopy_spread_si(io_si) = sites(s)%spread
 
-      ! Update the site status for cold deciduous (drought deciduous is now PFT dependent)
-      hio_site_cstatus_si(io_si)   = real(sites(s)%cstatus,r8)
-
-      ! Number of chill days and cold days
+      ! Number of chill days and cold days (site-level)
       hio_site_nchilldays_si(io_si) = real(sites(s)%nchilldays,r8)
       hio_site_ncolddays_si(io_si)  = real(sites(s)%ncolddays,r8)
 
-      ! Growing degree-days
-      hio_gdd_si(io_si) = sites(s)%grow_deg_days
-
-      ! Model days elapsed since leaf on/off for cold-deciduous
-      hio_cleafoff_si(io_si) = real(sites(s)%phen_model_date - sites(s)%cleafoffdate,r8)
-      hio_cleafon_si(io_si)  = real(sites(s)%phen_model_date - sites(s)%cleafondate,r8)
-
+      !Jing Tao (#17): cold-deciduous status / GDD / days-since-leaf-on-off are now PER-PFT
+      ! (was site-level) -> written in the i_pft loop below, mirroring the drought-deciduous vars.
 
       ! Update drought deciduous information (now separated by PFT).
       do i_pft = 1,numpft
          ! Update the site-PFT status for drought deciduous
          hio_site_dstatus_si_pft(io_si,i_pft) = real(sites(s)%dstatus(i_pft),r8)
+
+         !Jing Tao (#17): per-PFT cold-deciduous diagnostics
+         hio_site_cstatus_si_pft(io_si,i_pft) = real(sites(s)%cstatus(i_pft),r8)
+         hio_gdd_si_pft(io_si,i_pft)          = sites(s)%grow_deg_days(i_pft)
+         hio_cleafoff_si_pft(io_si,i_pft)     = real(sites(s)%phen_model_date - sites(s)%cleafoffdate(i_pft),r8)
+         hio_cleafon_si_pft(io_si,i_pft)      = real(sites(s)%phen_model_date - sites(s)%cleafondate(i_pft),r8)
 
          ! Model days elapsed since leaf off/on for drought deciduous
          hio_dleafoff_si_pft(io_si,i_pft)     = real(sites(s)%dndaysleafon (i_pft),r8)
@@ -5387,15 +5385,15 @@ end subroutine update_history_hifrq
          upfreq=1, ivar=ivar, initialize=initialize_variables,                 &
          index=ih_ca_weighted_height_si)
 
-    call this%set_history_var(vname='FATES_COLD_STATUS', units='',             &
-          long='site-level cold status, 0=not cold-dec, 1=too cold for leaves, 2=not too cold',  &
-          use_default='active', avgflag='A', vtype=site_r8, hlms='CLM:ALM',    &
+    call this%set_history_var(vname='FATES_COLD_STATUS_PF', units='',          &   !Jing Tao (#17): per-PFT
+          long='PFT-level cold status, 0=not cold-dec, 1=too cold for leaves, 2=not too cold',  &
+          use_default='active', avgflag='A', vtype=site_pft_r8, hlms='CLM:ALM', &
           upfreq=1, ivar=ivar, initialize=initialize_variables,                &
           index=ih_site_cstatus_si)
 
-    call this%set_history_var(vname='FATES_GDD', units='degree_Celsius',       &
-         long='site-level growing degree days', use_default='active',          &
-         avgflag='A', vtype=site_r8, hlms='CLM:ALM',                           &
+    call this%set_history_var(vname='FATES_GDD_PF', units='degree_Celsius',    &   !Jing Tao (#17): per-PFT
+         long='PFT-level growing degree days', use_default='active',           &
+         avgflag='A', vtype=site_pft_r8, hlms='CLM:ALM',                       &
          upfreq=1, ivar=ivar, initialize=initialize_variables, index=ih_gdd_si)
 
     call this%set_history_var(vname='FATES_NCHILLDAYS', units = 'days',        &
@@ -5410,15 +5408,15 @@ end subroutine update_history_hifrq
          upfreq=1, ivar=ivar, initialize=initialize_variables,                 &
          index=ih_site_ncolddays_si)
 
-    call this%set_history_var(vname='FATES_DAYSINCE_COLDLEAFOFF',              &
-         units='days', long='site-level days elapsed since cold leaf drop',    &
-         use_default='active', avgflag='A', vtype=site_r8, hlms='CLM:ALM',     &
+    call this%set_history_var(vname='FATES_DAYSINCE_COLDLEAFOFF_PF',           &   !Jing Tao (#17): per-PFT
+         units='days', long='PFT-level days elapsed since cold leaf drop',     &
+         use_default='active', avgflag='A', vtype=site_pft_r8, hlms='CLM:ALM', &
          upfreq=1, ivar=ivar, initialize=initialize_variables,                 &
          index=ih_cleafoff_si)
 
-    call this%set_history_var(vname='FATES_DAYSINCE_COLDLEAFON',               &
-         units='days', long='site-level days elapsed since cold leaf flush',   &
-         use_default='active', avgflag='A', vtype=site_r8, hlms='CLM:ALM',     &
+    call this%set_history_var(vname='FATES_DAYSINCE_COLDLEAFON_PF',            &   !Jing Tao (#17): per-PFT
+         units='days', long='PFT-level days elapsed since cold leaf flush',    &
+         use_default='active', avgflag='A', vtype=site_pft_r8, hlms='CLM:ALM', &
          upfreq=1, ivar=ivar, initialize=initialize_variables,                 &
          index=ih_cleafon_si)
 

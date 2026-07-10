@@ -218,6 +218,11 @@ module EDPftvarcon
                                                           ! on bud-burst [kgC/kgC]
      real(r8), allocatable :: phen_cold_size_threshold(:) ! stem/leaf drop occurs on DBH size of decidious non-woody
                                                           ! (coastal grass) plants larger than the threshold value
+     !Jing Tao (#17 phen_gddthresh_c PFT-split): exponent `c` in the cold-deciduous budburst GDD-threshold rule
+     ! gdd_threshold = phen_a + phen_b*exp(c*ncd) (ncd = accumulated chilling days). Was a single global scalar
+     ! (ED_val_phen_c in EDParamsMod); promoted here to per-PFT so PFT9-leaf and PFT10-fineroot can decouple their
+     ! leaf-out timing (the #1 Morris lever; R5 joint-corner wall). Default = shared -0.01 for all PFTs = bit baseline.
+     real(r8), allocatable :: phen_gddthresh_c(:)         ! GDD-threshold decay exponent c, per-PFT [1/chilling-day] (#17)
 
      ! Nutrient Aquisition parameters
      real(r8), allocatable :: prescribed_nuptake(:)   ! If there is no soil BGC model active,
@@ -725,6 +730,11 @@ contains
     call fates_params%RegisterParameter(name=name, dimension_shape=dimension_shape_1d, &
           dimension_names=dim_names, lower_bounds=dim_lower_bound)
 
+    !Jing Tao (#17): register the per-PFT cold-decid GDD-threshold exponent (moved from EDParamsMod scalar).
+    name = 'fates_phen_gddthresh_c'
+    call fates_params%RegisterParameter(name=name, dimension_shape=dimension_shape_1d, &
+          dimension_names=dim_names, lower_bounds=dim_lower_bound)
+
 
     ! Nutrient competition parameters
 
@@ -1179,6 +1189,11 @@ contains
     name = 'fates_phen_cold_size_threshold'
     call fates_params%RetrieveParameterAllocate(name=name, &
           data=this%phen_cold_size_threshold)
+
+    !Jing Tao (#17): retrieve the per-PFT cold-decid GDD-threshold exponent (moved from EDParamsMod scalar).
+    name = 'fates_phen_gddthresh_c'
+    call fates_params%RetrieveParameterAllocate(name=name, &
+          data=this%phen_gddthresh_c)
 
     name = 'fates_cnp_prescribed_nuptake'
     call fates_params%RetrieveParameterAllocate(name=name, &
@@ -1713,6 +1728,7 @@ contains
         write(fates_log(),fmt0) 'taus = ',EDPftvarcon_inst%taus
         write(fates_log(),fmt0) 'phen_flush_fraction',EDpftvarcon_inst%phenflush_fraction
         write(fates_log(),fmt0) 'phen_cold_size_threshold = ',EDPftvarcon_inst%phen_cold_size_threshold
+        write(fates_log(),fmt0) 'phen_gddthresh_c = ',EDPftvarcon_inst%phen_gddthresh_c   !Jing Tao (#17)
         write(fates_log(),fmt0) 'fire_alpha_SH = ',EDPftvarcon_inst%fire_alpha_SH
         write(fates_log(),fmt0) 'allom_frbstor_repro = ',EDPftvarcon_inst%allom_frbstor_repro
         write(fates_log(),fmt0) 'hydro_p_taper = ',EDPftvarcon_inst%hydr_p_taper

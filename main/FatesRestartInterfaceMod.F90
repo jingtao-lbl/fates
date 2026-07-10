@@ -662,7 +662,7 @@ contains
          long_name='Total number of FATES patches per column', units='none', flushval = flushinvalid, &
           hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_npatch_si )
 
-    call this%set_restart_var(vname='fates_cold_dec_status', vtype=site_int, &
+    call this%set_restart_var(vname='fates_cold_dec_status', vtype=cohort_int, &   !Jing Tao (#17): per-PFT (site x pft); was site_int
          long_name='status flag for cold deciduous plants', units='unitless', flushval = flushinvalid, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_cd_status_si )
 
@@ -674,19 +674,19 @@ contains
          long_name='cold day counter', units='unitless', flushval = flushinvalid, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_ncold_days_si )
 
-    call this%set_restart_var(vname='fates_cold_leafondate', vtype=site_int, &
+    call this%set_restart_var(vname='fates_cold_leafondate', vtype=cohort_int, &   !Jing Tao (#17): per-PFT
          long_name='the model day of last cold leaf on', units='absolute integer day', flushval = flushinvalid, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_cleafondate_si )
 
-    call this%set_restart_var(vname='fates_cold_leafoffdate', vtype=site_int, &
+    call this%set_restart_var(vname='fates_cold_leafoffdate', vtype=cohort_int, &   !Jing Tao (#17): per-PFT
          long_name='the model day last cold leaf off', units='absolute integer day', flushval = flushinvalid, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_cleafoffdate_si )
 
-    call this%set_restart_var(vname='fates_cold_ndaysleafon', vtype=site_int, &
+    call this%set_restart_var(vname='fates_cold_ndaysleafon', vtype=cohort_int, &   !Jing Tao (#17): per-PFT
          long_name='number of days since leaf on (cold deciduous)', units='days', flushval = flushinvalid, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_cndaysleafon_si )
 
-    call this%set_restart_var(vname='fates_cold_ndaysleafoff', vtype=site_int, &
+    call this%set_restart_var(vname='fates_cold_ndaysleafoff', vtype=cohort_int, &   !Jing Tao (#17): per-PFT
          long_name='number of days since leaf off (cold deciduous)', units='days', flushval = flushinvalid, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_cndaysleafoff_si )
 
@@ -698,7 +698,7 @@ contains
          long_name='a nesterov index accumulator', units='unitless', flushval = flushzero, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_acc_ni_si )
 
-    call this%set_restart_var(vname='fates_gdd_site', vtype=site_r8, &
+    call this%set_restart_var(vname='fates_gdd_site', vtype=cohort_r8, &   !Jing Tao (#17): per-PFT grow_deg_days; was site_r8
          long_name='growing degree days at each site', units='degC days', flushval = flushzero, &
          hlms='CLM:ALM', initialize=initialize_variables, ivar=ivar, index = ir_gdd_si )
 
@@ -2205,6 +2205,13 @@ contains
              rio_dndaysleafon_sift(io_idx_si_pft)  = sites(s)%dndaysleafon(i_pft)
              rio_dndaysleafoff_sift(io_idx_si_pft) = sites(s)%dndaysleafoff(i_pft)
              rio_elong_factor_sift(io_idx_si_pft)  = sites(s)%elong_factor(i_pft)
+             !Jing Tao (#17): per-PFT cold-phenology state (promoted from site-level), same si x pft slot.
+             rio_cd_status_si(io_idx_si_pft)       = sites(s)%cstatus(i_pft)
+             rio_cleafondate_si(io_idx_si_pft)     = sites(s)%cleafondate(i_pft)
+             rio_cleafoffdate_si(io_idx_si_pft)    = sites(s)%cleafoffdate(i_pft)
+             rio_cndaysleafon_si(io_idx_si_pft)    = sites(s)%cndaysleafon(i_pft)
+             rio_cndaysleafoff_si(io_idx_si_pft)   = sites(s)%cndaysleafoff(i_pft)
+             rio_gdd_si(io_idx_si_pft)             = sites(s)%grow_deg_days(i_pft)
              rio_seed_in_sift(io_idx_si_pft)       = sites(s)%seed_in(i_pft)
              rio_seed_out_sift(io_idx_si_pft)       = sites(s)%seed_out(i_pft)
              io_idx_si_pft = io_idx_si_pft + 1
@@ -2589,15 +2596,12 @@ contains
           rio_fmortcarea_cano_si(io_idx_si) = sites(s)%fmort_crownarea_canopy
           rio_fmortcarea_usto_si(io_idx_si) = sites(s)%fmort_crownarea_ustory
 
-          rio_cd_status_si(io_idx_si)     = sites(s)%cstatus
           rio_nchill_days_si(io_idx_si)   = sites(s)%nchilldays
           rio_ncold_days_si(io_idx_si)    = sites(s)%ncolddays
-          rio_cleafondate_si(io_idx_si)   = sites(s)%cleafondate
-          rio_cleafoffdate_si(io_idx_si)  = sites(s)%cleafoffdate
-          rio_cndaysleafon_si(io_idx_si)  = sites(s)%cndaysleafon
-          rio_cndaysleafoff_si(io_idx_si) = sites(s)%cndaysleafoff
-          rio_gdd_si(io_idx_si)           = sites(s)%grow_deg_days
           rio_phenmodeldate_si(io_idx_si) = sites(s)%phen_model_date
+          !Jing Tao (#17): cstatus / cleafondate / cleafoffdate / cndaysleafon / cndaysleafoff /
+          ! grow_deg_days are now per-PFT -> written in the i_pft restart loop (with io_idx_si_pft).
+          ! nchilldays / ncolddays / phen_model_date stay site-level.
 
  
 
@@ -3146,6 +3150,13 @@ contains
              sites(s)%dndaysleafon(i_pft)   = rio_dndaysleafon_sift(io_idx_si_pft)
              sites(s)%dndaysleafoff(i_pft)  = rio_dndaysleafoff_sift(io_idx_si_pft)
              sites(s)%elong_factor(i_pft)   = rio_elong_factor_sift(io_idx_si_pft)
+             !Jing Tao (#17): per-PFT cold-phenology state (promoted from site-level), same si x pft slot.
+             sites(s)%cstatus(i_pft)        = rio_cd_status_si(io_idx_si_pft)
+             sites(s)%cleafondate(i_pft)    = rio_cleafondate_si(io_idx_si_pft)
+             sites(s)%cleafoffdate(i_pft)   = rio_cleafoffdate_si(io_idx_si_pft)
+             sites(s)%cndaysleafon(i_pft)   = rio_cndaysleafon_si(io_idx_si_pft)
+             sites(s)%cndaysleafoff(i_pft)  = rio_cndaysleafoff_si(io_idx_si_pft)
+             sites(s)%grow_deg_days(i_pft)  = rio_gdd_si(io_idx_si_pft)
              sites(s)%seed_in(i_pft)        = rio_seed_in_sift(io_idx_si_pft)
              sites(s)%seed_out(i_pft)        = rio_seed_out_sift(io_idx_si_pft)
              io_idx_si_pft = io_idx_si_pft + 1
@@ -3571,15 +3582,11 @@ contains
 
           ! Site level phenology status flags
 
-          sites(s)%cstatus        = rio_cd_status_si(io_idx_si)
           sites(s)%nchilldays     = rio_nchill_days_si(io_idx_si)
           sites(s)%ncolddays      = rio_ncold_days_si(io_idx_si)
-          sites(s)%cleafondate    = rio_cleafondate_si(io_idx_si)
-          sites(s)%cleafoffdate   = rio_cleafoffdate_si(io_idx_si)
-          sites(s)%cndaysleafon   = rio_cndaysleafon_si(io_idx_si)
-          sites(s)%cndaysleafoff  = rio_cndaysleafoff_si(io_idx_si)
-          sites(s)%grow_deg_days  = rio_gdd_si(io_idx_si)
           sites(s)%phen_model_date= rio_phenmodeldate_si(io_idx_si)
+          !Jing Tao (#17): cstatus / cleafondate / cleafoffdate / cndaysleafon / cndaysleafoff /
+          ! grow_deg_days are now per-PFT -> read in the i_pft restart loop (with io_idx_si_pft).
 
          
 

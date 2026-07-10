@@ -62,7 +62,9 @@ module EDParamsMod
    real(r8),protected, public :: maintresp_nonleaf_baserate           ! Base maintenance respiration rate for plant tissues
    real(r8),protected, public :: ED_val_phen_a                        ! GDD accumulation function, intercept parameter: gdd_thesh = a + b exp(c*ncd)
    real(r8),protected, public :: ED_val_phen_b                        ! GDD accumulation function, multiplier parameter: gdd_thesh = a + b exp(c*ncd)
-   real(r8),protected, public :: ED_val_phen_c                        ! GDD accumulation function, exponent parameter: gdd_thesh = a + b exp(c*ncd)
+   !Jing Tao (#17 phen_gddthresh_c PFT-split): ED_val_phen_c (the exponent `c` in gdd_thresh = a + b*exp(c*ncd))
+   !  MOVED from this scalar container to the per-PFT container EDPftvarcon (fates_phen_gddthresh_c, per-PFT).
+   !  EDParamsMod has no clean array-retrieve; EDPftvarcon is the idiomatic per-PFT home. phen_a/phen_b stay shared.
    real(r8),protected, public :: ED_val_phen_chiltemp                 ! chilling day counting threshold for vegetation
    real(r8),protected, public :: ED_val_phen_mindayson                ! day threshold compared against days since leaves became on-allometry
    real(r8),protected, public :: ED_val_phen_ncolddayslim             ! day threshold exceedance for temperature leaf-drop
@@ -175,8 +177,8 @@ integer, parameter, public :: maxpft = 16      ! maximum number of PFTs allowed
    character(len=param_string_length),parameter,public :: fates_name_maintresp_nonleaf_baserate= "fates_maintresp_nonleaf_baserate"
    character(len=param_string_length),parameter,public :: ED_name_phen_a= "fates_phen_gddthresh_a"   
    character(len=param_string_length),parameter,public :: ED_name_phen_b= "fates_phen_gddthresh_b"   
-   character(len=param_string_length),parameter,public :: ED_name_phen_c= "fates_phen_gddthresh_c"   
-   character(len=param_string_length),parameter,public :: ED_name_phen_chiltemp= "fates_phen_chilltemp"   
+   !Jing Tao (#17): ED_name_phen_c removed — fates_phen_gddthresh_c is now registered per-PFT in EDPftvarcon.
+   character(len=param_string_length),parameter,public :: ED_name_phen_chiltemp= "fates_phen_chilltemp"
    character(len=param_string_length),parameter,public :: ED_name_phen_mindayson= "fates_phen_mindayson"
    character(len=param_string_length),parameter,public :: ED_name_phen_ncolddayslim= "fates_phen_ncolddayslim"   
    character(len=param_string_length),parameter,public :: ED_name_phen_coldtemp= "fates_phen_coldtemp"   
@@ -350,7 +352,7 @@ contains
     maintresp_nonleaf_baserate            = nan
     ED_val_phen_a                         = nan
     ED_val_phen_b                         = nan
-    ED_val_phen_c                         = nan
+    !Jing Tao (#17): ED_val_phen_c init removed — moved to EDPftvarcon per-PFT.
     ED_val_phen_chiltemp                  = nan
     ED_val_phen_mindayson                 = nan
     ED_val_phen_ncolddayslim              = nan
@@ -486,8 +488,7 @@ contains
     call fates_params%RegisterParameter(name=ED_name_phen_b, dimension_shape=dimension_shape_scalar, &
          dimension_names=dim_names_scalar)
 
-    call fates_params%RegisterParameter(name=ED_name_phen_c, dimension_shape=dimension_shape_scalar, &
-         dimension_names=dim_names_scalar)
+    !Jing Tao (#17): fates_phen_gddthresh_c register removed — now registered per-PFT in EDPftvarcon%Register_PFT.
 
     call fates_params%RegisterParameter(name=ED_name_phen_chiltemp, dimension_shape=dimension_shape_scalar, &
          dimension_names=dim_names_scalar)
@@ -704,8 +705,7 @@ contains
     call fates_params%RetrieveParameter(name=ED_name_phen_b, &
          data=ED_val_phen_b)
 
-    call fates_params%RetrieveParameter(name=ED_name_phen_c, &
-         data=ED_val_phen_c)
+    !Jing Tao (#17): fates_phen_gddthresh_c retrieve removed — now retrieved per-PFT in EDPftvarcon%Receive_PFT.
 
     call fates_params%RetrieveParameter(name=ED_name_phen_chiltemp, &
          data=ED_val_phen_chiltemp)
@@ -898,7 +898,7 @@ contains
         write(fates_log(),fmt0) 'fates_maintresp_nonleaf_baserate = ', maintresp_nonleaf_baserate
         write(fates_log(),fmt0) 'ED_val_phen_a = ',ED_val_phen_a
         write(fates_log(),fmt0) 'ED_val_phen_b = ',ED_val_phen_b
-        write(fates_log(),fmt0) 'ED_val_phen_c = ',ED_val_phen_c
+        !Jing Tao (#17): ED_val_phen_c report removed — reported per-PFT in EDPftvarcon.
         write(fates_log(),fmt0) 'ED_val_phen_chiltemp = ',ED_val_phen_chiltemp
         write(fates_log(),fmt0) 'ED_val_phen_mindayson = ',ED_val_phen_mindayson
         write(fates_log(),fmt0) 'ED_val_phen_ncolddayslim = ',ED_val_phen_ncolddayslim
