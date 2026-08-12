@@ -56,6 +56,7 @@ module FatesSoilBGCFluxMod
   use FatesInterfaceTypesMod, only    : hlm_decomp
   use FatesInterfaceTypesMod, only    : hlm_phosphorus_suppl
   use FatesInterfaceTypesMod, only    : hlm_nitrogen_suppl
+  use FatesInterfaceTypesMod, only    : hlm_use_rootfinesfrag_fix
   use FatesConstantsMod , only : prescribed_p_uptake
   use FatesConstantsMod , only : prescribed_n_uptake
   use FatesConstantsMod , only : coupled_p_uptake
@@ -588,17 +589,26 @@ contains
        end select
 
        litt => cpatch%litter(el)
-       
+
        do j = 1,csite%nlevsoil
 
           ! kg/m2/day
-          litt%root_fines_frag(ilabile,j) = litt%root_fines_frag(ilabile,j) + &
+          ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): writes into
+          ! root_fines_efflux, NOT root_fines_frag -- root_fines_frag is CWDOut's own
+          ! turnover-fragmentation output, and PreDisturbanceIntegrateLitter (EDPhysiologyMod.F90)
+          ! subtracts it straight back out of root_fines assuming it holds nothing else. Mixing this
+          ! physiological-efflux term into that same array over-drained root_fines and crashed a
+          ! decomposition-pool check (memory/model_logs/20260811d_Root_Fines_Frag_Overwrite_Fix_Redesign.md).
+          ! root_fines_efflux is a separate, same-day-only accumulator (zeroed daily,
+          ! FatesLitterMod.F90::ZeroFlux) that FluxIntoLitterPools reads in addition to
+          ! root_fines_frag when building the FATES->ELM boundary flux.
+          litt%root_fines_efflux(ilabile,j) = litt%root_fines_efflux(ilabile,j) + &
                efflux_ptr * ccohort%n * AREA_INV * csite%rootfrac_scr(j)
 
           ! Note: we do not increment the site-level mass flux checking
           ! variable site_mass%frag_out  This will be incremented later
           ! in the call sequence, and we don't want to double count.
-          
+
        end do
 
     end do
@@ -831,6 +841,31 @@ contains
                   litt%root_fines_frag(icellulose,j) * area_frac
              flux_lig_si(id) = flux_lig_si(id) + &
                   litt%root_fines_frag(ilignin,j) * area_frac
+             ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): deliver the plant
+             ! physiological efflux (root_fines_efflux, written by EffluxIntoLitterPools, labile
+             ! channel only) into the boundary flux here -- kept out of root_fines_frag itself (see
+             ! that array's declaration comment, FatesLitterMod.F90). Gated default-off
+             ! (use_fates_rootfinesfrag_fix, elm_varctl.F90) for V0-at-equality: root_fines_efflux is
+             ! always computed, but only READ into flux_lab_si when the switch is on, so switch-off
+             ! reproduces today's (bug-present) behavior bit-for-bit.
+             !
+             ! NO area_frac here, unlike root_fines_frag just above -- EffluxIntoLitterPools
+             ! (FatesSoilBGCFluxMod.F90, "efflux_ptr * ccohort%n * AREA_INV * rootfrac_scr(j)")
+             ! already normalizes by AREA_INV = 1/AREA, the SAME total-site-area constant this
+             ! subroutine's own "area = <site area>" denominator uses for area_frac
+             ! (EDTypesMod.F90:809 uses the identical currentPatch%area/AREA pattern) -- so
+             ! root_fines_efflux is already a site-normalized density, not a per-patch-area one like
+             ! root_fines_frag (which comes from root_fines, a genuinely per-patch quantity, and
+             ! DOES need area_frac to weight each patch's contribution into the site total).
+             ! Multiplying by area_frac a second time here silently shrank every patch's real
+             ! contribution by its own area fraction before summing -- caught by comparing a direct
+             ! runtime print of root_fines_efflux (correctly ~631-681 gP/m2/yr) against flux_lab_si's
+             ! own JTVERIFY2 print (unchanged between switch on/off, i.e. contributing nothing
+             ! measurable) on the same 5-day verification run.
+             if (hlm_use_rootfinesfrag_fix == itrue) then
+                flux_lab_si(id) = flux_lab_si(id) + &
+                     litt%root_fines_efflux(ilabile,j)
+             end if
           enddo
 
           currentPatch => currentPatch%younger
@@ -847,6 +882,16 @@ contains
           flux_lab_si(id) = days_per_sec * g_per_kg * &
                flux_lab_si(id) / bc_in%dz_decomp_sisl(id)
        end do
+
+       ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): TEMPORARY confirming print
+       ! for the redesigned fix -- directly shows the final phosphorus boundary flux
+       ! (bc_out%litt_flux_lab_p_si, via the flux_lab_si pointer) FluxIntoLitterPools produces, with
+       ! and without hlm_use_rootfinesfrag_fix. See A2MC memory/model_logs/20260811d_....md. Remove
+       ! once the fix is confirmed and no longer under active verification.
+       if (element_list(el) == phosphorus_element) then
+          write(fates_log(),*) 'JTVERIFY2 flux_lab_si(P) sum=', sum(flux_lab_si), &
+               ' hlm_use_rootfinesfrag_fix=', hlm_use_rootfinesfrag_fix
+       end if
 
     end do  ! do elements
 

@@ -792,7 +792,9 @@ contains
        ! turnover-only flux. Remove this block (and the ilabile import above) once confirmed either way.
        write(fates_log(),*) 'JTVERIFY before CWDOut: patch=', currentPatch%patchno, &
             ' root_fines_frag(ilabile,P)=', &
-            sum(currentPatch%litter(element_pos(phosphorus_element))%root_fines_frag(ilabile,:))
+            sum(currentPatch%litter(element_pos(phosphorus_element))%root_fines_frag(ilabile,:)), &
+            ' root_fines_efflux(ilabile,P)=', &
+            sum(currentPatch%litter(element_pos(phosphorus_element))%root_fines_efflux(ilabile,:))
 
        call PreDisturbanceLitterFluxes( currentSite, currentPatch, bc_in)
 
