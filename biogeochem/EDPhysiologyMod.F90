@@ -15,6 +15,7 @@ module EDPhysiologyMod
   use FatesInterfaceTypesMod, only    : nleafage
   use FatesInterfaceTypesMod, only    : nlevdamage
   use FatesInterfaceTypesMod, only    : hlm_use_planthydro
+  use FatesInterfaceTypesMod, only    : hlm_use_rootfinesfrag_fix
   use FatesInterfaceTypesMod, only    : hlm_parteh_mode
   use FatesInterfaceTypesMod, only    : hlm_use_fixed_biogeog
   use FatesInterfaceTypesMod, only    : hlm_use_nocomp
@@ -3307,9 +3308,42 @@ contains
        litt%leaf_fines_frag(dcmpy) = litt%leaf_fines(dcmpy) * &
              years_per_day * SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(soil_layer_index)
 
+       ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): root_fines_frag has TWO
+       ! legitimate daily writers, not one. EffluxIntoLitterPools (FatesSoilBGCFluxMod.F90:595-596,
+       ! called from EDMainMod.F90:651, once per cohort during the daily growth-allocation loop)
+       ! accumulates each cohort's daily C/N/P efflux (PRTAllometricCNPMod.F90:2003,
+       ! "p_efflux = p_gain" -- unusable excess uptake returned to the soil same-day) into this same
+       ! array, BEFORE this subroutine (CWDOut, called via PreDisturbanceLitterFluxes at
+       ! EDMainMod.F90:778) runs. The original code below unconditionally OVERWROTE root_fines_frag
+       ! with only the turnover-fragmentation term, silently discarding the efflux contribution
+       ! before FluxIntoLitterPools (EDMainMod.F90:790) could read it into the FATES->ELM boundary
+       ! flux (bc_out%litt_flux_lab_p_si and the C/N equivalents) -- confirmed empirically (A2MC
+       ! reports/20260811b_R1_p_mass_flow_tracing_and_supplementation_withdrawal sec3c-sec3e: GROSS_PMIN,
+       ! LITR1P_vr, and the PDIAG diagnostic all showed only the small turnover-only flux ever
+       ! arriving) and then mechanistically + at runtime (sec3f-sec3h + this branch's own JTVERIFY
+       ! print, memory/model_logs/20260811b_Root_Fines_Frag_Overwrite_Confirmed_JTVERIFY.md): the
+       ! efflux term collapsed from ~631-681 gP/m2/yr to ~0.56-0.63 gP/m2/yr across this exact call,
+       ! every single day.
+       !
+       ! Fix, gated default-OFF (use_fates_rootfinesfrag_fix, elm_varctl.F90) for V0-at-equality with
+       ! today's (buggy) behavior: ACCUMULATE the turnover term into root_fines_frag instead of
+       ! overwriting it. This is safe from cross-day double-counting because ZeroLitterFluxes
+       ! (EDMainMod.F90:198) zeros root_fines_frag exactly once per day, at the very start of the
+       ! daily dynamics sequence, before EITHER writer (EffluxIntoLitterPools or this subroutine)
+       ! runs -- so by the time CWDOut executes, root_fines_frag holds only today's efflux
+       ! contribution (or zero, if no efflux happened), and adding the turnover term to that gives
+       ! the correct daily total (efflux + turnover) rather than either term silently replacing the
+       ! other.
        do ilyr = 1,nlev_eff_decomp
-           litt%root_fines_frag(dcmpy,ilyr) = litt%root_fines(dcmpy,ilyr) * &
-                 years_per_day *  SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(ilyr)
+          if (hlm_use_rootfinesfrag_fix == itrue) then
+             litt%root_fines_frag(dcmpy,ilyr) = litt%root_fines_frag(dcmpy,ilyr) + &
+                   litt%root_fines(dcmpy,ilyr) * &
+                   years_per_day *  SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(ilyr)
+          else
+             ! Original, default behavior -- kept bit-for-bit identical for V0-at-equality.
+             litt%root_fines_frag(dcmpy,ilyr) = litt%root_fines(dcmpy,ilyr) * &
+                   years_per_day *  SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(ilyr)
+          end if
        end do
     enddo
 

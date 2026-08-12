@@ -1552,6 +1552,7 @@ contains
          hlm_sf_anthro_ignitions_def = unset_int
          hlm_use_managed_fire = unset_int
          hlm_use_planthydro = unset_int
+         hlm_use_rootfinesfrag_fix = unset_int
          hlm_use_lu_harvest   = unset_int
          hlm_num_lu_harvest_cats   = unset_int
          hlm_num_luh2_states       = unset_int
@@ -2044,6 +2045,17 @@ contains
                hlm_use_planthydro = ival
                if (fates_global_verbose()) then
                   write(fates_log(),*) 'Transfering hlm_use_planthydro= ',ival,' to FATES'
+               end if
+
+            ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): mirrors use_planthydro
+            ! just above -- receives use_fates_rootfinesfrag_fix from the ELM namelist (threaded via
+            ! elmfates_interfaceMod.F90) and stores it in hlm_use_rootfinesfrag_fix, which
+            ! biogeochem/EDPhysiologyMod.F90's CWDOut reads to decide whether to accumulate into
+            ! root_fines_frag (fixed) or overwrite it (default, today's behavior).
+            case('use_rootfinesfrag_fix')
+               hlm_use_rootfinesfrag_fix = ival
+               if (fates_global_verbose()) then
+                  write(fates_log(),*) 'Transfering hlm_use_rootfinesfrag_fix= ',ival,' to FATES'
                end if
 
             case('use_lu_harvest')
