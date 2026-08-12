@@ -63,6 +63,9 @@ module EDMainMod
   use FatesSizeAgeTypeIndicesMod, only : coagetype_class_index
   use FatesLitterMod           , only : litter_type
   use FatesLitterMod           , only : ncwd
+  use FatesLitterMod           , only : ilabile    ! !Jing Tao (2026-08-11, branch
+                                                     ! exp/nbalance-and-p-litter-diag): for the
+                                                     ! JTVERIFY diagnostic print, see PreDisturbanceLitterFluxes call site below.
   use EDtypesMod               , only : ed_site_type
   use EDTypesMod               , only : set_patchno
   use FatesPatchMod            , only : fates_patch_type
@@ -772,10 +775,30 @@ contains
 
     currentPatch => currentSite%youngest_patch
     do while(associated(currentPatch))
-       
+
        call GenerateDamageAndLitterFluxes( currentSite, currentPatch)
 
+       ! !Jing Tao (2026-08-11, branch exp/nbalance-and-p-litter-diag): TEMPORARY diagnostic print,
+       ! read-only (no state change, so no V0-at-equality run is needed -- a print cannot alter model
+       ! output). Verifies the hypothesis in A2MC report
+       ! reports/20260811b_R1_p_mass_flow_tracing_and_supplementation_withdrawal sec3h: that
+       ! PreDisturbanceLitterFluxes -> CWDOut (EDPhysiologyMod.F90:3311) OVERWRITES (not accumulates)
+       ! litt%root_fines_frag's phosphorus channel with a pure turnover-fragmentation value, silently
+       ! erasing the day's plant P efflux that EffluxIntoLitterPools (FatesSoilBGCFluxMod.F90:595-596,
+       ! called earlier in this same daily sequence, above in this subroutine) had just accumulated into
+       ! it -- before FluxIntoLitterPools (this subroutine, below) ever reads it into
+       ! bc_out%litt_flux_lab_p_si. If the hypothesis is right, the "before" value should be large
+       ! (matching the day's FATES_PEFFLUX) and the "after" value should collapse to the small
+       ! turnover-only flux. Remove this block (and the ilabile import above) once confirmed either way.
+       write(fates_log(),*) 'JTVERIFY before CWDOut: patch=', currentPatch%patchno, &
+            ' root_fines_frag(ilabile,P)=', &
+            sum(currentPatch%litter(element_pos(phosphorus_element))%root_fines_frag(ilabile,:))
+
        call PreDisturbanceLitterFluxes( currentSite, currentPatch, bc_in)
+
+       write(fates_log(),*) 'JTVERIFY after CWDOut: patch=', currentPatch%patchno, &
+            ' root_fines_frag(ilabile,P)=', &
+            sum(currentPatch%litter(element_pos(phosphorus_element))%root_fines_frag(ilabile,:))
 
        call PreDisturbanceIntegrateLitter(currentPatch )
 
