@@ -100,6 +100,17 @@ module FatesLitterMod
       real(r8),allocatable ::  bg_cwd_frag(:,:)     ! below ground cwd fragmentation flux   [kg/m2/day]
       real(r8),allocatable ::  leaf_fines_frag(:)   ! above ground fines fragmentation flux [kg/m2/day]
       real(r8),allocatable ::  root_fines_frag(:,:) ! kg/m2/day
+      ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): plant physiological C/N/P
+      ! efflux (EffluxIntoLitterPools, FatesSoilBGCFluxMod.F90; "unusable excess uptake returned to
+      ! the soil same-day", PRTAllometricCNPMod.F90:2003) -- kept SEPARATE from root_fines_frag
+      ! (turnover-fragmentation only) because PreDisturbanceIntegrateLitter (EDPhysiologyMod.F90)
+      ! subtracts root_fines_frag back out of root_fines and assumes it is turnover-only; mixing the
+      ! two in one array over-drained root_fines and crashed a decomposition-pool precision check
+      ! (memory/model_logs/20260811d_Root_Fines_Frag_Overwrite_Fix_Redesign.md). Same units, same
+      ! ilabile-only usage pattern as root_fines_frag; zeroed daily in ZeroFlux, no restart I/O (a
+      ! same-day transient, always rebuilt from zero before FluxIntoLitterPools reads it -- see
+      ! ZeroLitterFluxes, EDMainMod.F90:198, called before either writer runs each day).
+      real(r8),allocatable ::  root_fines_efflux(:,:) ! kg/m2/day
 
       real(r8), allocatable :: seed_decay(:)      ! decay of viable seeds to litter     [kg/m2/day]
       real(r8), allocatable :: seed_germ_decay(:) ! decay of germinated seeds to litter [kg/m2/day]
@@ -213,6 +224,8 @@ contains
                                             donor_litt%root_fines_in(dcmpy,ilyr) * donor_weight
           this%root_fines_frag(dcmpy,ilyr) = this%root_fines_frag(dcmpy,ilyr) * self_weight + &
                                             donor_litt%root_fines_frag(dcmpy,ilyr) * donor_weight
+          this%root_fines_efflux(dcmpy,ilyr) = this%root_fines_efflux(dcmpy,ilyr) * self_weight + &
+                                            donor_litt%root_fines_efflux(dcmpy,ilyr) * donor_weight
        end do
     end do
 
@@ -254,6 +267,7 @@ contains
     this%root_fines(:,:)      = donor_litt%root_fines(:,:)
     this%root_fines_in(:,:)   = donor_litt%root_fines_in(:,:)
     this%root_fines_frag(:,:) = donor_litt%root_fines_frag(:,:)
+    this%root_fines_efflux(:,:) = donor_litt%root_fines_efflux(:,:)
 
     return
   end subroutine CopyLitter
@@ -279,6 +293,7 @@ contains
     allocate(this%root_fines_in(ndcmpy,numlevsoil))
     allocate(this%leaf_fines_frag(ndcmpy))
     allocate(this%root_fines_frag(ndcmpy,numlevsoil))
+    allocate(this%root_fines_efflux(ndcmpy,numlevsoil))
 
     allocate(this%seed_in_local(numpft))
     allocate(this%seed_in_extern(numpft))
@@ -307,6 +322,7 @@ contains
     this%bg_cwd_frag(:,:)     = fates_unset_r8
     this%leaf_fines_frag(:)   = fates_unset_r8
     this%root_fines_frag(:,:) = fates_unset_r8
+    this%root_fines_efflux(:,:) = fates_unset_r8
 
     this%seed_decay(:)        = fates_unset_r8
     this%seed_germ_decay(:)   = fates_unset_r8
@@ -385,6 +401,7 @@ contains
     deallocate(this%bg_cwd_frag)
     deallocate(this%leaf_fines_frag)
     deallocate(this%root_fines_frag)
+    deallocate(this%root_fines_efflux)
    
     deallocate(this%seed_decay)
     deallocate(this%seed_germ_decay)
@@ -410,6 +427,7 @@ contains
     this%bg_cwd_frag(:,:)     = 0._r8
     this%leaf_fines_frag(:)   = 0._r8
     this%root_fines_frag(:,:) = 0._r8
+    this%root_fines_efflux(:,:) = 0._r8
     
     this%seed_germ_in(:)      = 0._r8
     this%seed_decay(:)        = 0._r8

@@ -144,6 +144,12 @@ module FatesInterfaceTypesMod
                                                        ! 1 = TRUE, 0 = FALSE
                                                        ! THIS IS CURRENTLY NOT SUPPORTED 
 
+   ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): gates the CWDOut overwrite fix,
+   ! see main/EDMainMod.F90/biogeochem/EDPhysiologyMod.F90 and elm_varctl.F90's
+   ! use_fates_rootfinesfrag_fix declaration for the full mechanism. 1 = TRUE (fixed), 0 = FALSE
+   ! (default, V0-at-equality with the pre-fix behavior).
+   integer, public :: hlm_use_rootfinesfrag_fix
+
    integer, public :: hlm_use_cohort_age_tracking ! This flag signals whether or not to use
                                                   ! cohort age tracking. 1 = TRUE, 0 = FALSE
 

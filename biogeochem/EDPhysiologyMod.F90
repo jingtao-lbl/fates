@@ -3307,9 +3307,32 @@ contains
        litt%leaf_fines_frag(dcmpy) = litt%leaf_fines(dcmpy) * &
              years_per_day * SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(soil_layer_index)
 
+       ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): root_fines_frag(dcmpy,ilyr)
+       ! below is unconditionally OVERWRITTEN with the turnover-fragmentation term -- deliberately,
+       ! this is correct. An earlier version of this fix made this an accumulate (+=) to preserve the
+       ! plant physiological efflux EffluxIntoLitterPools (FatesSoilBGCFluxMod.F90) writes into the
+       ! SAME array earlier the same day (PRTAllometricCNPMod.F90:2003, "p_efflux = p_gain") --
+       ! confirmed by a runtime print to fix the FATES_PEFFLUX mass-gap (A2MC reports/20260811b sec3h),
+       ! but that broke a DIFFERENT invariant: PreDisturbanceIntegrateLitter (this file, ~line 583)
+       ! subtracts root_fines_frag back out of root_fines (the standing dead-root stock) to keep the
+       ! stock/output-flux pair self-consistent -- and it assumes root_fines_frag is turnover ONLY.
+       ! Feeding it efflux+turnover over-drained root_fines by the efflux amount every day (mass that
+       ! never came from root_fines in the first place), driving root_fines negative within ~500
+       ! simulated days and eventually crashing PrecisionControlMod.F90's decomp_ppools-negative check
+       ! (confirmed via a full ADSP run + the JTVERIFY trend: smooth/small for ~500 days, then an
+       ! abrupt sign flip right before the crash). See
+       ! memory/model_logs/20260811d_Root_Fines_Frag_Overwrite_Fix_Redesign.md for the full trace.
+       !
+       ! Corrected design: the efflux term now has its OWN array, root_fines_efflux (declared
+       ! FatesLitterMod.F90, written by EffluxIntoLitterPools), so root_fines_frag never carries
+       ! anything but turnover and this subroutine needs no gating at all -- restored to the original,
+       ! unconditional overwrite. FluxIntoLitterPools (FatesSoilBGCFluxMod.F90) adds root_fines_efflux
+       ! on top when building the FATES->ELM boundary flux, gated on hlm_use_rootfinesfrag_fix so V0
+       ! (switch off) still reproduces today's behavior bit-for-bit (root_fines_efflux is computed
+       ! either way but only READ into the boundary flux when the switch is on).
        do ilyr = 1,nlev_eff_decomp
-           litt%root_fines_frag(dcmpy,ilyr) = litt%root_fines(dcmpy,ilyr) * &
-                 years_per_day *  SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(ilyr)
+          litt%root_fines_frag(dcmpy,ilyr) = litt%root_fines(dcmpy,ilyr) * &
+                years_per_day *  SF_val_max_decomp(fuel_classes%dead_leaves()) * fragmentation_scaler(ilyr)
        end do
     enddo
 
