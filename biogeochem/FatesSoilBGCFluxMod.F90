@@ -883,16 +883,6 @@ contains
                flux_lab_si(id) / bc_in%dz_decomp_sisl(id)
        end do
 
-       ! !Jing Tao (2026-08-11, branch exp/rootfinesfrag-overwrite-fix): TEMPORARY confirming print
-       ! for the redesigned fix -- directly shows the final phosphorus boundary flux
-       ! (bc_out%litt_flux_lab_p_si, via the flux_lab_si pointer) FluxIntoLitterPools produces, with
-       ! and without hlm_use_rootfinesfrag_fix. See A2MC memory/model_logs/20260811d_....md. Remove
-       ! once the fix is confirmed and no longer under active verification.
-       if (element_list(el) == phosphorus_element) then
-          write(fates_log(),*) 'JTVERIFY2 flux_lab_si(P) sum=', sum(flux_lab_si), &
-               ' hlm_use_rootfinesfrag_fix=', hlm_use_rootfinesfrag_fix
-       end if
-
     end do  ! do elements
 
     ! If we are coupled with MIMICS, then we need some assessment of litter quality
