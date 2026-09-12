@@ -5596,6 +5596,9 @@ contains
     real(r8) :: landuse_statevector(n_landuse_cats)
     real(r8) :: canopy_area_bylanduse(n_landuse_cats)
     integer  :: i_lu
+    !Jing Tao: needed by the GPP-by-land-use loop below, which must index
+    ! cpatch%coarrays%gpp_tstep(ico) on this branch rather than read a cohort scalar.
+    integer  :: ico
     integer, parameter  :: baregroundindex = 0
 
     type(fates_patch_type),pointer  :: cpatch
@@ -5706,13 +5709,24 @@ contains
          ! for GPP by land use, we need to loop over both patches and cohorts
          cpatch => sites(s)%oldest_patch
          do while(associated(cpatch))
-            ccohort => cpatch%shortest
+            !Jing Tao: LOOP DIRECTION INVERTED ON PURPOSE -- do not "restore" it.
+            ! Upstream sci.1.91.1 wrote this block walking %shortest -> %taller against the old
+            ! scalar ccohort%gpp_tstep. This branch moved per-cohort GPP into
+            ! cpatch%coarrays%gpp_tstep(ico), which is indexed from the TALLEST cohort (ico=1)
+            ! and advanced via %shorter -- see the hio_gpp_si loop in
+            ! update_history_hifrq_sitelevel. Keeping the original direction while indexing the
+            ! coarray would pair each cohort with a DIFFERENT cohort's GPP: no compile or runtime
+            ! error, just a silently wrong FATES_GPP_LU. Units unchanged (kgC/plant/step * n/m2
+            ! * 1/s -> kgC/m2/s).
+            ico = 0
+            ccohort => cpatch%tallest
             do while(associated(ccohort))
+               ico = ico + 1
                if ( (.not. ccohort%isnew) .and. (cpatch%land_use_label .gt. nocomp_bareground_land) ) then
                   hio_gpp_si_landuse(io_si,cpatch%land_use_label) = hio_gpp_si_landuse(io_si,cpatch%land_use_label) &
-                       + ccohort%gpp_tstep * ccohort%n * dt_tstep_inv
+                       + cpatch%coarrays%gpp_tstep(ico) * ccohort%n * dt_tstep_inv
                end if
-               ccohort => ccohort%taller
+               ccohort => ccohort%shorter
             end do
             cpatch => cpatch%younger
          end do
