@@ -52,7 +52,16 @@ module EDParamsMod
    real(r8),protected, public :: maintresp_nonleaf_baserate           ! Base maintenance respiration rate for plant tissues
    real(r8),protected, public :: ED_val_phen_a                        ! GDD accumulation function, intercept parameter: gdd_thesh = a + b exp(c*ncd)
    real(r8),protected, public :: ED_val_phen_b                        ! GDD accumulation function, multiplier parameter: gdd_thesh = a + b exp(c*ncd)
-   real(r8),protected, public :: ED_val_phen_c                        ! GDD accumulation function, exponent parameter: gdd_thesh = a + b exp(c*ncd)
+   !Jing Tao (2026-11-15, branch exp20261115/phen-gddthresh-pft-split-cnpv2): per-PFT cold phenology, ported to
+   !   FATES CNP v2 (1e948bb40) from the api-43 fork's commit 675fb49f. fates_phen_gddthresh_c, the exponent c in
+   !   gdd_threshold = a + b*exp(c*nchilldays) (unitless, negative), and the cold-phenology state it drives
+   !   (cstatus, grow_deg_days, cleafondate, cleafoffdate, cndaysleafon, cndaysleafoff) become per-PFT, mirroring
+   !   the drought-deciduous dstatus(maxpft) design, so each cold-deciduous PFT leafs out on its own schedule.
+   !   Every reader of that state is inside a cold-deciduous (ihard_season_decid) branch, so with one value of c
+   !   for every PFT the model reproduces the scalar version. The parameter file must give c per PFT
+   !   (dims fates_pft).
+   ! This file: the scalar ED_val_phen_c is removed; c is read per PFT in EDPftvarcon.
+   ! scalar cold budburst exponent removed; promoted to per-PFT EDPftvarcon_inst%phen_gddthresh_c !Jing Tao: exponent c now per-PFT
    real(r8),protected, public :: ED_val_phen_chiltemp                 ! chilling day counting threshold for vegetation
    real(r8),protected, public :: ED_val_phen_mindayson                ! day threshold compared against days since leaves became on-allometry
    real(r8),protected, public :: ED_val_phen_ncolddayslim             ! day threshold exceedance for temperature leaf-drop
@@ -240,7 +249,6 @@ module EDParamsMod
     maintresp_nonleaf_baserate            = nan
     ED_val_phen_a                         = nan
     ED_val_phen_b                         = nan
-    ED_val_phen_c                         = nan
     ED_val_phen_chiltemp                  = nan
     ED_val_phen_mindayson                 = nan
     ED_val_phen_ncolddayslim              = nan
@@ -360,9 +368,6 @@ module EDParamsMod
     
     param_p => pstruct%GetParamFromName("fates_phen_gddthresh_b")
     ED_val_phen_b = param_p%r_data_scalar
-    
-    param_p => pstruct%GetParamFromName("fates_phen_gddthresh_c")
-    ED_val_phen_c = param_p%r_data_scalar
     
     param_p => pstruct%GetParamFromName("fates_phen_chilltemp")
     ED_val_phen_chiltemp = param_p%r_data_scalar
@@ -536,7 +541,6 @@ module EDParamsMod
         write(fates_log(),fmt0) 'fates_maintresp_nonleaf_baserate = ', maintresp_nonleaf_baserate
         write(fates_log(),fmt0) 'ED_val_phen_a = ',ED_val_phen_a
         write(fates_log(),fmt0) 'ED_val_phen_b = ',ED_val_phen_b
-        write(fates_log(),fmt0) 'ED_val_phen_c = ',ED_val_phen_c
         write(fates_log(),fmt0) 'ED_val_phen_chiltemp = ',ED_val_phen_chiltemp
         write(fates_log(),fmt0) 'ED_val_phen_mindayson = ',ED_val_phen_mindayson
         write(fates_log(),fmt0) 'ED_val_phen_ncolddayslim = ',ED_val_phen_ncolddayslim

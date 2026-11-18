@@ -984,7 +984,16 @@ contains
 
          phen_select: select case (prt_params%phen_leaf_habit(temp_cohort%pft))
          case (ihard_season_decid)
-            if ( any(csite%cstatus == [phen_cstat_nevercold,phen_cstat_iscold]) ) then
+            !Jing Tao (2026-11-15, branch exp20261115/phen-gddthresh-pft-split-cnpv2): per-PFT cold phenology, ported to
+            !   FATES CNP v2 (1e948bb40) from the api-43 fork's commit 675fb49f. fates_phen_gddthresh_c, the exponent c in
+            !   gdd_threshold = a + b*exp(c*nchilldays) (unitless, negative), and the cold-phenology state it drives
+            !   (cstatus, grow_deg_days, cleafondate, cleafoffdate, cndaysleafon, cndaysleafoff) become per-PFT, mirroring
+            !   the drought-deciduous dstatus(maxpft) design, so each cold-deciduous PFT leafs out on its own schedule.
+            !   Every reader of that state is inside a cold-deciduous (ihard_season_decid) branch, so with one value of c
+            !   for every PFT the model reproduces the scalar version. The parameter file must give c per PFT
+            !   (dims fates_pft).
+            ! This file: inventory initialization reads the cohort's PFT's cold status.
+            if ( any(csite%cstatus(temp_cohort%pft) == [phen_cstat_nevercold,phen_cstat_iscold]) ) then !Jing Tao: per-PFT cstatus
                ! Cold deciduous and season is for leaves off. Set leaf status and 
                ! elongation factors accordingly
                temp_cohort%efleaf_coh = 0.0_r8

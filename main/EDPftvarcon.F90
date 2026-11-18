@@ -218,6 +218,16 @@ module EDPftvarcon
                                                           ! on bud-burst [kgC/kgC]
      real(r8), allocatable :: phen_cold_size_threshold(:) ! stem/leaf drop occurs on DBH size of decidious non-woody
                                                           ! (coastal grass) plants larger than the threshold value
+     !Jing Tao (2026-11-15, branch exp20261115/phen-gddthresh-pft-split-cnpv2): per-PFT cold phenology, ported to
+     !   FATES CNP v2 (1e948bb40) from the api-43 fork's commit 675fb49f. fates_phen_gddthresh_c, the exponent c in
+     !   gdd_threshold = a + b*exp(c*nchilldays) (unitless, negative), and the cold-phenology state it drives
+     !   (cstatus, grow_deg_days, cleafondate, cleafoffdate, cndaysleafon, cndaysleafoff) become per-PFT, mirroring
+     !   the drought-deciduous dstatus(maxpft) design, so each cold-deciduous PFT leafs out on its own schedule.
+     !   Every reader of that state is inside a cold-deciduous (ihard_season_decid) branch, so with one value of c
+     !   for every PFT the model reproduces the scalar version. The parameter file must give c per PFT
+     !   (dims fates_pft).
+     ! This file: phen_gddthresh_c(numpft) is read from fates_phen_gddthresh_c.
+     real(r8), allocatable :: phen_gddthresh_c(:)         !Jing Tao: per-PFT cold budburst exponent c in gdd_thresh=a+b*exp(c*ncd)
 
      ! Nutrient Aquisition parameters
      real(r8), allocatable :: prescribed_nuptake(:)   ! If there is no soil BGC model active,
@@ -635,7 +645,11 @@ contains
     param_p => pstruct%GetParamFromName('fates_phen_cold_size_threshold')
     allocate(EDPftvarcon_inst%phen_cold_size_threshold(numpft))
     EDPftvarcon_inst%phen_cold_size_threshold(:) = param_p%r_data_1d(:)
-    
+
+    param_p => pstruct%GetParamFromName('fates_phen_gddthresh_c')                    !Jing Tao: read per-PFT cold budburst exponent c
+    allocate(EDPftvarcon_inst%phen_gddthresh_c(numpft))                             !Jing Tao: allocate per-PFT gddthresh_c
+    EDPftvarcon_inst%phen_gddthresh_c(:) = param_p%r_data_1d(:)                      !Jing Tao: load per-PFT gddthresh_c from param file
+
     param_p => pstruct%GetParamFromName('fates_cnp_prescribed_nuptake')
     allocate(EDPftvarcon_inst%prescribed_nuptake(numpft))
     EDPftvarcon_inst%prescribed_nuptake(:) = param_p%r_data_1d(:)
@@ -893,6 +907,7 @@ contains
         write(fates_log(),fmt0) 'taus = ',EDPftvarcon_inst%taus
         write(fates_log(),fmt0) 'phen_flush_fraction',EDpftvarcon_inst%phenflush_fraction
         write(fates_log(),fmt0) 'phen_cold_size_threshold = ',EDPftvarcon_inst%phen_cold_size_threshold
+        write(fates_log(),fmt0) 'phen_gddthresh_c = ',EDPftvarcon_inst%phen_gddthresh_c   !Jing Tao: dump per-PFT gddthresh_c
         write(fates_log(),fmt0) 'fire_alpha_SH = ',EDPftvarcon_inst%fire_alpha_SH
         write(fates_log(),fmt0) 'allom_frbstor_repro = ',EDPftvarcon_inst%allom_frbstor_repro
         write(fates_log(),fmt0) 'hydro_p_taper = ',EDPftvarcon_inst%hydr_p_taper

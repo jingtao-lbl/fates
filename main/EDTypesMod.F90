@@ -435,10 +435,19 @@ module EDTypesMod
      
 
      ! PHENOLOGY 
-     real(r8) ::  grow_deg_days                                ! Phenology growing degree days
+     !Jing Tao (2026-11-15, branch exp20261115/phen-gddthresh-pft-split-cnpv2): per-PFT cold phenology, ported to
+     !   FATES CNP v2 (1e948bb40) from the api-43 fork's commit 675fb49f. fates_phen_gddthresh_c, the exponent c in
+     !   gdd_threshold = a + b*exp(c*nchilldays) (unitless, negative), and the cold-phenology state it drives
+     !   (cstatus, grow_deg_days, cleafondate, cleafoffdate, cndaysleafon, cndaysleafoff) become per-PFT, mirroring
+     !   the drought-deciduous dstatus(maxpft) design, so each cold-deciduous PFT leafs out on its own schedule.
+     !   Every reader of that state is inside a cold-deciduous (ihard_season_decid) branch, so with one value of c
+     !   for every PFT the model reproduces the scalar version. The parameter file must give c per PFT
+     !   (dims fates_pft).
+     ! This file: the six cold-phenology site fields are dimensioned (maxpft).
+     real(r8) ::  grow_deg_days(maxpft)                        !Jing Tao: per-PFT growing degree days (mirror dstatus/drought)
      real(r8) ::  snow_depth                                   ! site-level snow depth (used for ELAI/TLAI calcs)
 
-     integer  ::  cstatus                                      ! are leaves in this pixel on or off for cold decid
+     integer  ::  cstatus(maxpft)                              !Jing Tao: per-PFT cold-decid leaf on/off status (mirror dstatus)
                                                                ! 0 = this site has not experienced a cold period over at least
                                                                !     400 days, leaves are dropped and flagged as non-cold region
                                                                ! 1 = this site is in a cold-state where leaves should have fallen
@@ -452,10 +461,10 @@ module EDTypesMod
      integer  ::  nchilldays                                   ! num chilling days: (for botta gdd trheshold calculation)
      integer  ::  ncolddays                                    ! num cold days: (must exceed threshold to drop leaves)
      real(r8) ::  vegtemp_memory(num_vegtemp_mem)              ! record of last 10 days temperature for senescence model. deg C
-     integer  ::  cleafondate                                  ! model date (day integer) of leaf on (cold):-
-     integer  ::  cleafoffdate                                 ! model date (day integer) of leaf off (cold):-
-     integer  ::  cndaysleafon                                 ! number of days since leaf on period started (cold)
-     integer  ::  cndaysleafoff                                ! number of days since leaf off period started (cold)
+     integer  ::  cleafondate(maxpft)                          !Jing Tao: per-PFT model date of leaf on (cold) (mirror dleafondate)
+     integer  ::  cleafoffdate(maxpft)                         !Jing Tao: per-PFT model date of leaf off (cold) (mirror dleafoffdate)
+     integer  ::  cndaysleafon(maxpft)                         !Jing Tao: per-PFT days since leaf on started (cold) (mirror dndaysleafon)
+     integer  ::  cndaysleafoff(maxpft)                        !Jing Tao: per-PFT days since leaf off started (cold) (mirror dndaysleafoff)
      integer  ::  dleafondate(maxpft)                          ! model date (day integer) of leaf on drought:-
      integer  ::  dleafoffdate(maxpft)                         ! model date (day integer) of leaf off drought:-
      integer  ::  dndaysleafon(maxpft)                         ! number of days since leaf on period started (drought)

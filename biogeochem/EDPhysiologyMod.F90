@@ -475,7 +475,7 @@ contains
          ! Calculate seed germination rate, the status flags prevent
          ! germination from occuring when the site is in a drought
          ! (for drought deciduous) or too cold (for cold deciduous)
-         call SeedGermination(litt, currentSite%cstatus, currentSite%dstatus(1:numpft), currentPatch)
+         call SeedGermination(litt, currentSite%cstatus(1:numpft), currentSite%dstatus(1:numpft), currentPatch) !Jing Tao: pass per-PFT cold status
 
          ! Send fluxes from newly created litter into the litter pools
          ! This litter flux is from non-disturbance inducing mortality, as well
@@ -919,7 +919,7 @@ contains
     ! Phenology.
     !
     ! !USES:
-    use EDParamsMod, only : ED_val_phen_a, ED_val_phen_b, ED_val_phen_c
+    use EDParamsMod, only : ED_val_phen_a, ED_val_phen_b   !Jing Tao: scalar exponent c removed (now per-PFT EDPftvarcon_inst%phen_gddthresh_c)
     use EDParamsMod, only : ED_val_phen_chiltemp
     use EDParamsMod, only : ED_val_phen_mindayson
     use EDParamsMod, only : ED_val_phen_ncolddayslim
@@ -1019,7 +1019,7 @@ contains
 
     !GDD accumulation function, which also depends on chilling days.
     !  -68 + 638 * (-0.001 * ncd)
-    gdd_threshold = ED_val_phen_a + ED_val_phen_b*exp(ED_val_phen_c*real(currentSite%nchilldays,r8))
+    !Jing Tao: gdd_threshold moved into the per-PFT cold_decid_loop below (uses per-PFT phen_gddthresh_c)
 
     !count number of days for leaves off
     ncolddays = 0
@@ -1031,15 +1031,32 @@ contains
 
     ! Here is where we do the GDD accumulation calculation
     !
+    !Jing Tao (2026-11-15, branch exp20261115/phen-gddthresh-pft-split-cnpv2): per-PFT cold phenology, ported to
+    !   FATES CNP v2 (1e948bb40) from the api-43 fork's commit 675fb49f. fates_phen_gddthresh_c, the exponent c in
+    !   gdd_threshold = a + b*exp(c*nchilldays) (unitless, negative), and the cold-phenology state it drives
+    !   (cstatus, grow_deg_days, cleafondate, cleafoffdate, cndaysleafon, cndaysleafoff) become per-PFT, mirroring
+    !   the drought-deciduous dstatus(maxpft) design, so each cold-deciduous PFT leafs out on its own schedule.
+    !   Every reader of that state is inside a cold-deciduous (ihard_season_decid) branch, so with one value of c
+    !   for every PFT the model reproduces the scalar version. The parameter file must give c per PFT
+    !   (dims fates_pft).
+    ! This file: the cold leaf-on/leaf-off decision loops over the cold-deciduous PFTs; seed germination, elongation
+    !   factors, flushing and shedding, and recruit leaf status read cstatus(pft).
+    !Jing Tao: loop the cold-phenology decision over each cold-deciduous PFT; cold STATE is now per-PFT
+    cold_decid_loop: do ipft=1,numpft                                                     !Jing Tao: per-PFT cold phenology
+    cold_decid_gate: if (prt_params%phen_leaf_habit(ipft) == ihard_season_decid) then     !Jing Tao: only cold-deciduous PFTs
+
+    !Jing Tao: per-PFT GDD threshold using per-PFT exponent phen_gddthresh_c(ipft)
+    gdd_threshold = ED_val_phen_a + ED_val_phen_b*exp(EDPftvarcon_inst%phen_gddthresh_c(ipft)*real(currentSite%nchilldays,r8))
+
     ! reset GDD on set dates
     if (hlm_day_of_year == gddstart)then
-       currentSite%grow_deg_days = 0._r8
+       currentSite%grow_deg_days(ipft) = 0._r8                                            !Jing Tao: per-PFT
     endif
     !
     ! accumulate the GDD using daily mean temperatures
     ! Don't accumulate GDD during the growing season (that wouldn't make sense)
-    if (temp_in_C .gt. 0._r8 .and. currentSite%cstatus == phen_cstat_iscold) then
-       currentSite%grow_deg_days = currentSite%grow_deg_days + temp_in_C
+    if (temp_in_C .gt. 0._r8 .and. currentSite%cstatus(ipft) == phen_cstat_iscold) then   !Jing Tao: per-PFT cstatus
+       currentSite%grow_deg_days(ipft) = currentSite%grow_deg_days(ipft) + temp_in_C      !Jing Tao: per-PFT
     endif
 
     !this logic is to prevent GDD accumulating after the leaves have fallen and before the
@@ -1050,14 +1067,14 @@ contains
           ! In the north, don't accumulate when we are past the leaf fall date.
           ! Accumulation starts on day 1 of year in NH.
           ! The 180 is to prevent going into an 'always off' state after initialization
-          if( model_day_int .gt. currentSite%cleafoffdate.and.hlm_day_of_year.gt.180)then !
-             currentSite%grow_deg_days = 0._r8
+          if( model_day_int .gt. currentSite%cleafoffdate(ipft).and.hlm_day_of_year.gt.180)then !Jing Tao: per-PFT cleafoffdate
+             currentSite%grow_deg_days(ipft) = 0._r8                                      !Jing Tao: per-PFT
           endif
        else !Southern Hemisphere
           ! In the South, don't accumulate after the leaf off date, and before the start of
           ! the accumulation phase (day 181).
-          if(model_day_int .gt. currentSite%cleafoffdate.and.hlm_day_of_year.lt.gddstart) then!
-             currentSite%grow_deg_days = 0._r8
+          if(model_day_int .gt. currentSite%cleafoffdate(ipft).and.hlm_day_of_year.lt.gddstart) then !Jing Tao: per-PFT cleafoffdate
+             currentSite%grow_deg_days(ipft) = 0._r8                                      !Jing Tao: per-PFT
           endif
        endif
     endif !year1
@@ -1066,16 +1083,16 @@ contains
     ! and off. If this is the beginning of the simulation, that day might
     ! not had occured yet, so set it to last year to get things rolling
 
-    if (model_day_int < currentSite%cleafoffdate) then
-       currentSite%cndaysleafoff = model_day_int - (currentSite%cleafoffdate - ndays_per_year)
+    if (model_day_int < currentSite%cleafoffdate(ipft)) then                              !Jing Tao: per-PFT cleafoffdate
+       currentSite%cndaysleafoff(ipft) = model_day_int - (currentSite%cleafoffdate(ipft) - ndays_per_year) !Jing Tao: per-PFT
     else
-       currentSite%cndaysleafoff = model_day_int - currentSite%cleafoffdate
+       currentSite%cndaysleafoff(ipft) = model_day_int - currentSite%cleafoffdate(ipft)   !Jing Tao: per-PFT
     end if
 
-    if (model_day_int < currentSite%cleafondate) then
-       currentSite%cndaysleafon = model_day_int - (currentSite%cleafondate - ndays_per_year)
+    if (model_day_int < currentSite%cleafondate(ipft)) then                               !Jing Tao: per-PFT cleafondate
+       currentSite%cndaysleafon(ipft) = model_day_int - (currentSite%cleafondate(ipft) - ndays_per_year) !Jing Tao: per-PFT
     else
-       currentSite%cndaysleafon = model_day_int - currentSite%cleafondate
+       currentSite%cndaysleafon(ipft) = model_day_int - currentSite%cleafondate(ipft)     !Jing Tao: per-PFT
     end if
 
 
@@ -1088,14 +1105,14 @@ contains
     !   from ever re-flushing after they have reached their maximum age (thus
     !   preventing them from competing
 
-    if ( any(currentSite%cstatus == [phen_cstat_iscold,phen_cstat_nevercold]) .and. &
-         (currentSite%grow_deg_days > gdd_threshold) .and. &
-         (currentSite%cndaysleafoff > ED_val_phen_mindayson) .and. &
+    if ( any(currentSite%cstatus(ipft) == [phen_cstat_iscold,phen_cstat_nevercold]) .and. & !Jing Tao: per-PFT cstatus
+         (currentSite%grow_deg_days(ipft) > gdd_threshold) .and. &                        !Jing Tao: per-PFT
+         (currentSite%cndaysleafoff(ipft) > ED_val_phen_mindayson) .and. &                !Jing Tao: per-PFT
          (currentSite%nchilldays >= 1)) then
-       currentSite%cstatus = phen_cstat_notcold  ! Set to not-cold status (leaves can come on)
-       currentSite%cleafondate = model_day_int
-       currentSite%cndaysleafon = 0
-       currentSite%grow_deg_days = 0._r8 ! zero GDD for the rest of the year until counting season begins.
+       currentSite%cstatus(ipft) = phen_cstat_notcold  ! Set to not-cold status (leaves can come on) !Jing Tao: per-PFT
+       currentSite%cleafondate(ipft) = model_day_int                                      !Jing Tao: per-PFT
+       currentSite%cndaysleafon(ipft) = 0                                                 !Jing Tao: per-PFT
+       currentSite%grow_deg_days(ipft) = 0._r8 ! zero GDD for the rest of the year until counting season begins. !Jing Tao: per-PFT
        if ( debug ) write(fates_log(),*) 'leaves on'
     endif !GDD
 
@@ -1110,19 +1127,19 @@ contains
     !4) The day of simulation should be larger than the counting period.
 
 
-    if ( (currentSite%cstatus == phen_cstat_notcold) .and. &
+    if ( (currentSite%cstatus(ipft) == phen_cstat_notcold) .and. &                        !Jing Tao: per-PFT cstatus
          (model_day_int > num_vegtemp_mem)      .and. &
          (ncolddays > ED_val_phen_ncolddayslim) .and. &
-         (currentSite%cndaysleafon > ED_val_phen_mindayson) )then
+         (currentSite%cndaysleafon(ipft) > ED_val_phen_mindayson) )then                   !Jing Tao: per-PFT
 
-       currentSite%grow_deg_days  = 0._r8          ! The equations for Botta et al
+       currentSite%grow_deg_days(ipft)  = 0._r8          ! The equations for Botta et al  !Jing Tao: per-PFT
        ! are for calculations of
        ! first flush, but if we dont
        ! clear this value, it will cause
        ! leaves to flush later in the year
-       currentSite%cstatus       = phen_cstat_iscold  ! alter status of site to 'leaves off'
-       currentSite%cleafoffdate = model_day_int       ! record leaf off date
-       currentSite%cndaysleafoff = 0
+       currentSite%cstatus(ipft)       = phen_cstat_iscold  ! alter status of site to 'leaves off' !Jing Tao: per-PFT
+       currentSite%cleafoffdate(ipft) = model_day_int       ! record leaf off date        !Jing Tao: per-PFT
+       currentSite%cndaysleafoff(ipft) = 0                                                !Jing Tao: per-PFT
 
        if ( debug ) write(fates_log(),*) 'leaves off'
     endif
@@ -1133,19 +1150,22 @@ contains
     ! when coupled with this fact will essentially prevent cold-deciduous
     ! plants from re-emerging in areas without at least some cold days
 
-    if( (currentSite%cstatus == phen_cstat_notcold)  .and. &
-        (currentSite%cndaysleafoff > 400)) then   ! remove leaves after a whole year,
+    if( (currentSite%cstatus(ipft) == phen_cstat_notcold)  .and. &                        !Jing Tao: per-PFT cstatus
+        (currentSite%cndaysleafoff(ipft) > 400)) then   ! remove leaves after a whole year, !Jing Tao: per-PFT
                                                   ! when there is no 'off' period.
-       currentSite%grow_deg_days  = 0._r8
+       currentSite%grow_deg_days(ipft)  = 0._r8                                           !Jing Tao: per-PFT
 
-       currentSite%cstatus = phen_cstat_nevercold  ! alter status of site to imply that this
+       currentSite%cstatus(ipft) = phen_cstat_nevercold  ! alter status of site to imply that this !Jing Tao: per-PFT
        ! site is never really cold enough
        ! for cold deciduous
-       currentSite%cleafoffdate = model_day_int    ! record leaf off date
-       currentSite%cndaysleafoff = 0
+       currentSite%cleafoffdate(ipft) = model_day_int    ! record leaf off date           !Jing Tao: per-PFT
+       currentSite%cndaysleafoff(ipft) = 0                                                !Jing Tao: per-PFT
 
        if ( debug ) write(fates_log(),*) 'leaves off'
     endif
+
+    end if cold_decid_gate                                                                !Jing Tao: close cold-deciduous gate
+    end do cold_decid_loop                                                                !Jing Tao: close per-PFT cold loop
 
 
 
@@ -1443,7 +1463,7 @@ contains
              currentSite%elong_factor(ipft) = 1.0_r8
           case (ihard_season_decid)
              ! Cold-deciduous. Define elongation factor based on cold status
-             select case (currentSite%cstatus)
+             select case (currentSite%cstatus(ipft))                                      !Jing Tao: per-PFT cstatus
              case (phen_cstat_nevercold,phen_cstat_iscold)
                 currentSite%elong_factor(ipft) = 0.0_r8
              case (phen_cstat_notcold)
@@ -1542,10 +1562,10 @@ contains
           case (ihard_season_decid) ! Cold deciduous
 
              ! A. Is this the time for COLD LEAVES to switch to ON?
-             is_flushing_time = ( currentSite%cstatus      == phen_cstat_notcold .and. & ! We just moved to leaves being on
+             is_flushing_time = ( currentSite%cstatus(ipft)  == phen_cstat_notcold .and. & ! We just moved to leaves being on !Jing Tao: per-PFT cstatus
                                   currentCohort%status_coh == leaves_off         )        ! Leaves are currently off
              ! B. Is this the time for COLD LEAVES to switch to OFF?
-             is_shedding_time = any(currentSite%cstatus == [phen_cstat_nevercold,phen_cstat_iscold]) .and. & ! Past leaf drop day or too cold
+             is_shedding_time = any(currentSite%cstatus(ipft) == [phen_cstat_nevercold,phen_cstat_iscold]) .and. & ! Past leaf drop day or too cold !Jing Tao: per-PFT cstatus
                                 currentCohort%status_coh == leaves_on                                .and. & ! Leaves have not dropped yet
                                 ( currentCohort%dbh > EDPftvarcon_inst%phen_cold_size_threshold(ipft) .or. & ! Grasses are big enough or...
                                   prt_params%woody(ipft) == itrue                                     )      ! this is a woody PFT.
@@ -2282,7 +2302,7 @@ contains
     !
     ! !ARGUMENTS
     type(litter_type) :: litt
-    integer                   , intent(in) :: cold_stat    ! Is the site in cold leaf-off status?
+    integer, dimension(numpft), intent(in) :: cold_stat    ! Is the site in cold leaf-off status? !Jing Tao: per-PFT cold status (mirror drought_stat)
     integer, dimension(numpft), intent(in) :: drought_stat ! Is the site in drought leaf-off status?
     type(fates_patch_type),        intent(in) :: currentPatch
     !
@@ -2377,7 +2397,7 @@ contains
        select case (prt_params%phen_leaf_habit(pft))
        case (ihard_season_decid)
           !set the germination only under the growing season...c.xu
-          if (any(cold_stat == [phen_cstat_nevercold,phen_cstat_iscold])) then
+          if (any(cold_stat(pft) == [phen_cstat_nevercold,phen_cstat_iscold])) then       !Jing Tao: per-PFT cold status
              ! no germination for all PFTs when cold
              litt%seed_germ_in(pft) = 0.0_r8
           end if
@@ -2496,7 +2516,7 @@ contains
             ! look for cases in which leaves should be off
             select case (prt_params%phen_leaf_habit(ft))
             case (ihard_season_decid)
-               select case(currentSite%cstatus)
+               select case(currentSite%cstatus(ft))                                       !Jing Tao: per-PFT cstatus
                case (phen_cstat_nevercold, phen_cstat_iscold)
                   ! If the plant is seasonally (cold) deciduous, and the site status is flagged
                   ! as "cold", then set the cohort's status to leaves_off.
