@@ -98,30 +98,39 @@ contains
     real(r8) :: sb
     real(r8) :: error                                         ! Error check
     real(r8) :: down_rad, up_rad                              ! Iterative solution do Dif_dn and Dif_up
-    real(r8) :: ftweight(nclmax,maxpft,nlevleaf)
+    !Jing Tao (2026-11-24, ELM-FATES-CO_Kougarok R1 candidate fix, tested through SourceMods first):
+    ! the per-layer local arrays below are declared one leaf layer deeper than nlevleaf. The solve indexes the
+    ! layer below a PFT's last leaf layer, nrad+1, for the light reaching the ground (tr_dir_z, dif_ratio,
+    ! Dif_dn, Dif_up, Abs_dir_z, Abs_dif_z at iv+1 or nrad+1), and nrad may equal nlevleaf (the patch's own
+    ! profile arrays are allocated nveg+1 deep for this reason, FatesPatchMod.F90). With nrad = nlevleaf those
+    ! writes fell one element past their arrays and overwrote other locals: in member 44 of the round's Morris
+    ! ensemble, a PFT's top-layer weight ftweight(1,7,1), which then drove the diffuse iteration to overflow.
+    ! The extra layer is zeroed with the rest of each array where the arrays are zeroed; when no PFT fills
+    ! nlevleaf layers it is never read, so such runs compute what they did before.
+    real(r8) :: ftweight(nclmax,maxpft,nlevleaf+1)
     real(r8) :: k_dir(maxpft)                              ! Direct beam extinction coefficient
-    real(r8) :: tr_dir_z(nclmax,maxpft,nlevleaf)         ! Exponential transmittance of direct beam radiation through a single layer
-    real(r8) :: tr_dif_z(nclmax,maxpft,nlevleaf)         ! Exponential transmittance of diffuse radiation through a single layer
+    real(r8) :: tr_dir_z(nclmax,maxpft,nlevleaf+1)       ! Exponential transmittance of direct beam radiation through a single layer
+    real(r8) :: tr_dif_z(nclmax,maxpft,nlevleaf+1)         ! Exponential transmittance of diffuse radiation through a single layer
     real(r8) :: weighted_dir_tr(nclmax)
     real(r8) :: weighted_fsun(nclmax)
     real(r8) :: weighted_dif_ratio(nclmax,num_swb)
     real(r8) :: weighted_dif_down(nclmax)
     real(r8) :: weighted_dif_up(nclmax)
-    real(r8) :: refl_dif(nclmax,maxpft,nlevleaf,num_swb)  ! Term for diffuse radiation reflected by laye
-    real(r8) :: tran_dif(nclmax,maxpft,nlevleaf,num_swb)  ! Term for diffuse radiation transmitted by layer
-    real(r8) :: dif_ratio(nclmax,maxpft,nlevleaf,num_swb) ! Ratio of upward to forward diffuse fluxes
-    real(r8) :: Dif_dn(nclmax,maxpft,nlevleaf)           ! Forward diffuse flux onto canopy layer J (W/m**2 ground area)
-    real(r8) :: Dif_up(nclmax,maxpft,nlevleaf)           ! Upward diffuse flux above canopy layer J (W/m**2 ground area)
-    real(r8) :: lai_change(nclmax,maxpft,nlevleaf)       ! Forward diffuse flux onto canopy layer J (W/m**2 ground area)
+    real(r8) :: refl_dif(nclmax,maxpft,nlevleaf+1,num_swb)  ! Term for diffuse radiation reflected by laye
+    real(r8) :: tran_dif(nclmax,maxpft,nlevleaf+1,num_swb)  ! Term for diffuse radiation transmitted by layer
+    real(r8) :: dif_ratio(nclmax,maxpft,nlevleaf+1,num_swb) ! Ratio of upward to forward diffuse fluxes
+    real(r8) :: Dif_dn(nclmax,maxpft,nlevleaf+1)           ! Forward diffuse flux onto canopy layer J (W/m**2 ground area)
+    real(r8) :: Dif_up(nclmax,maxpft,nlevleaf+1)           ! Upward diffuse flux above canopy layer J (W/m**2 ground area)
+    real(r8) :: lai_change(nclmax,maxpft,nlevleaf+1)       ! Forward diffuse flux onto canopy layer J (W/m**2 ground area)
 
     real(r8) :: frac_lai                                ! Fraction of lai in each layer
     real(r8) :: frac_sai                                ! Fraction of sai in each layer
-    real(r8) :: f_abs(nclmax,maxpft,nlevleaf,num_swb)    ! Fraction of light absorbed by surfaces.
-    real(r8) :: rho_layer(nclmax,maxpft,nlevleaf,num_swb)! Weighted verage reflectance of layer
-    real(r8) :: tau_layer(nclmax,maxpft,nlevleaf,num_swb)! Weighted average transmittance of layer
-    real(r8) :: f_abs_leaf(nclmax,maxpft,nlevleaf,num_swb)
-    real(r8) :: Abs_dir_z(maxpft,nlevleaf)
-    real(r8) :: Abs_dif_z(maxpft,nlevleaf)
+    real(r8) :: f_abs(nclmax,maxpft,nlevleaf+1,num_swb)    ! Fraction of light absorbed by surfaces.
+    real(r8) :: rho_layer(nclmax,maxpft,nlevleaf+1,num_swb)! Weighted verage reflectance of layer
+    real(r8) :: tau_layer(nclmax,maxpft,nlevleaf+1,num_swb)! Weighted average transmittance of layer
+    real(r8) :: f_abs_leaf(nclmax,maxpft,nlevleaf+1,num_swb)
+    real(r8) :: Abs_dir_z(maxpft,nlevleaf+1)
+    real(r8) :: Abs_dif_z(maxpft,nlevleaf+1)
     real(r8) :: abs_rad(num_swb)                               !radiation absorbed by soil
     real(r8) :: tr_soili                                      ! Radiation transmitted to the soil surface.
     real(r8) :: tr_soild                                      ! Radiation transmitted to the soil surface.
